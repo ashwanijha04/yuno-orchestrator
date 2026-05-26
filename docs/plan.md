@@ -141,6 +141,36 @@ Text is the baseline; **images are built end-to-end**, video is parsed + documen
 
 ---
 
+# Subsystem D — Frontend design system & component plan
+
+### Design direction (two skills, scoped)
+Use **shadcn discipline** as the system language for the **dense functional surfaces** (builder, timeline blocks, config forms, tables) — restrained, token-based, consistent; this is 90% of the app and where the rubric's UI/UX + configurability points live. Borrow Anthropic's **frontend-design** skill as a *direction lens* for the **identity layer + hero moments** only — the dashboard landing, overall character, and especially the **run timeline** (orchestrated staggered reveal as blocks animate in). Pick **one** bold-but-legible differentiator (a distinctive display font for headings + Geist Mono for metrics, one saturated accent, a staggered load animation) to avoid the "generic AI dashboard" look. **Do not** apply asymmetry / grid-breaking / overlap to data tables or the inspector — legibility wins there.
+
+**Stack:** Next.js App Router + **shadcn/ui** (`new-york` style, `--base radix`) + Tailwind v4 + React Flow + CodeMirror. `npx shadcn@latest init -d` then **fix the Geist font circular-reference** (literal `"Geist"`/`"Geist Mono"` names in `@theme inline`, font vars on `<html>`). Wrap root in `TooltipProvider` + `next-themes` (dark default).
+
+### Design tokens
+- **Style/mode:** `new-york`, **dark mode default** (developer/admin console). Base palette **zinc**, one accent via `--color-primary`.
+- **Type:** Geist Sans for UI; **Geist Mono for all metrics/IDs/costs/timestamps/latency/token counts** (run ids, `$0.043`, `12.4s`, tokens).
+- **Radius:** default `0.625rem`. **Density:** compact on data-dense surfaces (`gap-4`/`p-4`/`text-sm`), comfortable on config pages.
+- **Custom status tokens** (added alongside shadcn defaults in `@theme inline`): run/step status — `status-running` (accent), `status-completed` (green), `status-failed`/cost-breaker (`destructive`), `status-pending` (muted), `status-paused` (amber); plus per-agent-role hues for builder nodes + timeline rows. Surfaces always from tokens (`bg-card`, `text-muted-foreground`, `border-border`), never ad-hoc hex.
+
+### App shell
+Left sidebar nav (Dashboard, Agents, Workflows, Runs, Channels, Evals) + top bar (env/health badges, `Command` palette Cmd+K, theme toggle). Built from `Sheet` (mobile) + `Separator` + `Button` + `Badge`.
+
+### Surface → component mapping
+1. **Schema-driven agent/workflow config forms** — RJSF widgets mapped to shadcn primitives (`Input`, `Textarea`, `Select`, `Switch`, `Slider` for temperature, `Badge`-based multiselect for tools). `Tabs` per group (Identity · Model · Tools · Memory · Guardrails · Harness) inside `Card`s; sticky save bar; `Sheet` for quick-edit from a list; `AlertDialog` for delete; version `DropdownMenu` ("Restore as new version"). Empty/loading/error via `Card`+`Skeleton`+`Alert`.
+2. **React Flow workflow builder** — *Top bar:* `Button` group (Save · Validate) + `Dialog` (Test Run: variables form → live highlight) + `DropdownMenu` (Versions + diff). *Left palette:* `ScrollArea` + searchable `Command` + draggable agent/node cards (`Card`+`Badge` role color). *Canvas:* React Flow with custom node renderers styled from tokens (agent node = `Card` with name/role `Badge`; condition node shows expression in mono; channel node shows binding); edges label conditions. *Right inspector:* fixed panel (or `Sheet` on narrow) with `Tabs` (Config · Mapping · Overrides), `Form` fields, the **CodeMirror DSL editor** with autocomplete, and inline `Alert`s from the live validator.
+3. **Run timeline + live monitor** (the demo surface) — custom component: one row per agent, duration-scaled blocks (CSS width from ms), tool-call/inter-agent annotations as inline markers; `Tooltip` on hover (tokens/cost/latency in mono); click block → `Sheet`/`Dialog` with the full message thread (+ image thumbnails for multimodal); status `Badge`; run header card with total cost/duration. Live block animation via the WS subscriber; `Skeleton` rows while connecting; failed/cost-breaker blocks in `destructive`.
+4. **Eval pages** — `/evals`: `Table` of datasets + last-run pass-rate (inline sparkline) + `DropdownMenu` actions. `/evals/runs/{id}`: results `Table` (input | expected | actual | scores | pass `Badge` | rationale) with row → link to that example's **actual run timeline**. `Tabs` to compare last N runs.
+
+### Components to install (Phase 0)
+`button card dialog sheet alert-dialog input textarea select switch slider label form tabs table badge dropdown-menu command popover tooltip scroll-area separator skeleton avatar sonner` (toasts).
+
+### Quality
+Run **`vercel:react-best-practices`** over `.tsx` after each component batch (structure, hooks, a11y, perf, TS). Keep one accent color; no nested-cards-in-cards; `AlertDialog` (not `Dialog`) for destructive actions; designed empty/loading/error states everywhere.
+
+---
+
 ## Data model
 Base tables per `docs/architecture.md §4`: `agents, workflows, workflow_versions, channels, channel_bindings, runs, steps, messages, tool_invocations, schedules, outbound_messages` (costs denormalized message→step→run). Workflow rows carry the `variables/nodes/edges` schema above.
 
