@@ -8,11 +8,15 @@ Grade weights drive priorities: **working end-to-end demo 40% · architecture & 
 
 **Decisions made (locked):**
 - **Stack:** Python — FastAPI control plane + separate asyncio worker pool + LangGraph runtime + PostgreSQL + Redis; **Next.js** frontend.
-- **Channel:** **Telegram** (real). Slack + WhatsApp ship as documented stubs proving the `Channel` abstraction.
-- **Scope:** **Full brief, everything built** — plus the two load-bearing subsystems below (workflow creation, unified harness).
-- **Memory:** **extremis wired for real** as a selectable per-agent `ExternalMemoryStrategy` alongside Buffer / Summary / ChannelScoped.
+- **Channel:** **Telegram** (real). **Demo path = long-polling (`getUpdates`)** — no public tunnel, the safest 40% moment. **Webhooks documented as the production path** (signature verify). Slack + WhatsApp ship as documented stubs.
+- **Async inter-agent messaging:** **run-per-message + inbox** — `send_message_to_agent` writes a message row and **enqueues a new run** for the recipient agent (consumed from a Postgres-backed queue). *Not* "inject into a running compiled graph" (that doesn't fit LangGraph and is dropped). Static routing still uses outer-graph conditional edges.
+- **Scope:** **Full brief, everything built** — but the harness is built **thin core first, then deepened** (see Scope & sequencing). Nothing is cut by default; the deep parts are the first cut candidates if the demo/UI slip.
+- **Memory:** **extremis wired for real** as a selectable per-agent `ExternalMemoryStrategy` alongside Buffer / Summary / ChannelScoped — **shipped in `docker-compose` and must gracefully degrade if offline** (so "single command" + offline replay still hold).
 
-New project location: `/Users/ashwanijha/yuno-orchestrator` (git repo already initialized on `main`; plan copied to `docs/plan.md`). The long architecture brief is the canonical reference, checked in as `docs/architecture.md`. This file is the execution plan on top of it.
+New project location: `/Users/ashwanijha/yuno-orchestrator` (git repo on `main`; plan + architecture in `docs/`). Absolute paths here are local-dev; a fresh checkout (e.g. Ultraplan's cloud at `/home/user/repo`) uses the repo root — treat paths as relative to repo root. This file is the execution plan; `docs/architecture.md` is the canonical reference.
+
+### Review-driven changes (incorporated)
+Async messaging → run-per-message+inbox (drop in-graph injection); schema reconciled (`channel_bindings.workflow_id`, `agents.default_workflow`, `agents.harness` JSONB); workflow graph stored **only** in `workflow_versions` (+ `workflows.current_version` pointer); Telegram **long-polling** for the demo; extremis **in-compose + graceful degrade**; harness **thin-first** sequencing; **thin UI vertical slice pulled forward** (Phase 4); run queue **at-least-once** (Postgres pending-poller / Redis Streams); `require_approval_for`/`PAUSE` marked **designed-not-built** (needs the stubbed `human` node); recorded image calls **reference `media_assets`**, not inline base64.
 
 ---
 
@@ -24,9 +28,10 @@ New project location: `/Users/ashwanijha/yuno-orchestrator` (git repo already in
 - **Next.js UI (3000)** — Agent/Workflow CRUD, React Flow builder, run timeline + live monitor (WebSocket), eval pages.
 - **FastAPI control plane (8000)** — REST, WebSocket gateway, channel webhooks, scheduler.
 - **Worker pool (asyncio)** — LangGraph outer (workflow) + inner (ReAct agent) graphs, tool runtime, all LLM calls flow through the **harness**.
-- **Redis** — pub/sub, run queue, rate limits, agent inbox.
+- **Redis** — pub/sub (live UI), rate limits, agent inbox notifications. **Run queue is at-least-once** (Redis Streams consumer group *or* a Postgres pending-row poller over `runs WHERE status IN ('pending','running')`) so a worker crash between dequeue and commit re-delivers — consistent with "Postgres is truth" and the §14 heartbeat recovery. Naive `LPOP` (at-most-once) is rejected.
 - **Postgres** — source of truth (all tables below).
 - **code-runner** — separate no-network container for sandboxed `python_exec`.
+- **extremis** — memory server, **in `docker-compose`**; the `ExternalMemoryStrategy` degrades gracefully (falls back to buffer/summary, logs a warning) when unreachable.
 
 ---
 
@@ -63,7 +68,13 @@ A template is a dict with `template_id, name, description, required_agents[] (ro
 - **Templates to ship:** `market_intel.py` (Researcher → Analyst → Critic **feedback loop** → Briefer → Telegram) and `personal_assistant.py` (Telegram-bound Router → Specialists, ChannelScoped/extremis memory, scheduled digest).
 
 ### Versioning & edit semantics
-Editing a workflow creates a new `workflow_versions` row (immutable). In-flight runs reference `(workflow_id, version)` and continue against the **old** version; new runs use the new one. UI: version dropdown, old versions load read-only with "Restore as new version"; "Re-run with same inputs" uses the run's recorded version. ~4h, and the answer to "what if I edit a workflow while it's running?"
+The graph lives in **`workflow_versions` only** (immutable rows); `workflows` holds metadata + a **`current_version`** pointer (no `workflows.graph` column — avoids the dual-write drift hazard). Editing creates a new `workflow_versions` row and bumps the pointer. In-flight runs reference `(workflow_id, version)` and continue against the **old** version; new runs use `current_version`. UI: version dropdown, old versions load read-only with "Restore as new version"; "Re-run with same inputs" uses the run's recorded version. The answer to "what if I edit a workflow while it's running?"
+
+### Async inter-agent messaging (run-per-message + inbox)
+`send_message_to_agent(recipient, content)` is a tool that, in one transaction, writes a `messages` row (`recipient_agent_id` set) and **enqueues a new run** for the recipient agent (its inbox). The recipient's run is picked up by the same at-least-once queue as any other run. This satisfies "agents communicate asynchronously" cleanly: every message is a row, every handoff is a visible run on the timeline, and there is **no attempt to push a message into an already-compiled, in-flight LangGraph** (which LangGraph doesn't support). Static, author-time routing still uses outer-graph conditional edges (the common case); this tool is the dynamic-dispatch escape hatch with a per-workflow recipient allowlist.
+
+### Multi-turn channel continuity
+Each inbound Telegram message triggers a **new run** (the `channel_in` "await inbound mid-run" node is stubbed). Conversation continuity therefore rests entirely on **`ChannelScopedMemory`** (keyed by `channel_external_id`), not on in-run waiting — make this explicit in docs, since "live human conversation" can read like it needs a long-lived in-run loop. It doesn't.
 
 ### Channel ↔ workflow binding (what makes the system cohere)
 Inbound Telegram message → `/webhooks/{channel_id}` → `parse_webhook` → lookup `channel_binding` by `(channel_id, external_id)`:
@@ -82,6 +93,8 @@ Left **palette** (drag agents from `agents` table; node primitives; pre-wired "p
 
 # Subsystem B — The unified harness (the most defensible layer)
 
+> **Build order (thin-first):** the **thin core** — `HarnessExecutor` + **Anthropic + Stub + Replay** providers + **CostCap + Trace** interceptors + **JSONSchema** validator — is built early (Phase 2) and is **never cut**; it's what makes the runtime real and the demo deterministic. The **deep parts** — Bedrock provider, `CompositeJudge`, `CitationValidator`, script `include:`/Jinja2 composition, the full eval UI — are deferred to Phase 9 and are the **first cut candidates** if the demo (40%) or UI (20%) slip. This re-sequences the reviewer's "harness is over-scoped" concern without abandoning the locked "everything built" goal.
+
 ### Thesis
 Everything that happens around every LLM call is one lifecycle observed at different injection points: build request → call (retries/timeouts/provider quirks) → record → validate → replay → judge. **Production, test, eval, replay are configurations of one runtime, not separate systems.** No `if testing:` anywhere — test mode is `provider=StubProvider`, demo mode is `provider=ReplayProvider`, eval mode adds an interceptor.
 
@@ -89,13 +102,15 @@ Everything that happens around every LLM call is one lifecycle observed at diffe
 `HarnessedCall` is the per-invocation transaction object: identity (call/run/step/agent ids), `request: LLMRequest`, resolution (`provider`, `cost_model`, `validators[]`, `interceptors[]`), result (`response`, `attempts[]`, `validation_results[]`), and observation hooks (`events`, `trace_context`). `HarnessExecutor.execute` runs six phases: (1) interceptor `before` (block/modify), (2) execute with retry on transient + validation failures, (3) validate, (4) success normalize, (5) interceptor `after`, (6) **transactional persist then `events.emit`**. The inner graph uses the harness from day one — no retrofit.
 
 ### Providers (`harness/providers/`, the ONLY layer that knows provider shapes)
-Protocol: `complete`, `stream`, `estimate_tokens`, `cost_model`. Ship five: **Anthropic / OpenAI / Bedrock** (thin adapters: auth via env, tool-call format translation, system-prompt placement, structured-output APIs, streaming normalization, 429/`Retry-After`); **StubProvider** (deterministic, backed by a YAML `Script` resolved by `agent_id`/`call_index`/`content_contains`/`messages_hash`, first-match-wins, latency + error injection); **ReplayProvider** (replays recorded real calls in sequence with original latency × speed_factor). **Discipline: never write `if provider == "anthropic":` outside `providers/anthropic.py`** — extend `LLMRequest`/`LLMResponse` with optional fields instead. Adding Gemini = implement `GeminiProvider`, register; nothing else changes.
+Protocol: `complete`, `stream`, `estimate_tokens`, `cost_model`. **Core (Phase 2): Anthropic + StubProvider + ReplayProvider.** **OpenAI** follows when multimodal lands; **Bedrock is deferred** (Phase 9, first cut candidate). Adapters: auth via env, tool-call format translation, system-prompt placement, structured-output APIs, streaming normalization, 429/`Retry-After`. **StubProvider** — deterministic, YAML `Script` resolved by `agent_id`/`call_index`/`content_contains`/`messages_hash`, first-match-wins, latency + error injection. **ReplayProvider** — replays recorded real calls in sequence with original latency × speed_factor. **Discipline: never write `if provider == "anthropic":` outside `providers/anthropic.py`** — extend `LLMRequest`/`LLMResponse` with optional fields instead. Adding Gemini/Bedrock = implement the provider, register; nothing else changes.
+
+> **`estimate_tokens` must be conservative (round up).** The $0.10 cost-cap demo trips *before* the call via `run.total_cost + estimate > cap`; an under-estimate lets the call through and the breaker fires late. Bias the estimate high so the breaker trips predictably on camera.
 
 ### Scripts (`tests/scripts/*.yaml`)
-First-class, checked-in, diffable, Jinja2-templated, composable (`include:`), generatable from real runs (`harness script generate <run_id>`). The seam that makes the test harness usable.
+First-class, checked-in, diffable, generatable from real runs (`harness script generate <run_id>`). The seam that makes the test harness usable. **Jinja2 templating + `include:` composition are deferred** (Phase 9, first cut) — start with plain literal scripts.
 
 ### Validators (`harness/validators/`) — pass / fail / fail-with-retry
-`JSONSchemaValidator` (reinject error + schema, retry ≤2 — recovers ~90% of malformed output), `ToolCallValidator`, `ContentSafetyValidator` (redact, no retry), `CitationValidator` (per-agent opt-in), `MaxLengthValidator` (truncate, log). Listed in `agents.guardrails.validators`; adding one = a class + a config entry.
+**Core:** `JSONSchemaValidator` (reinject error + schema, retry ≤2 — recovers ~90% of malformed output), `MaxLengthValidator` (truncate, log), `ToolCallValidator`. `ContentSafetyValidator` (redact, no retry) with channel binding. **`CitationValidator` deferred** (first cut). Validator config lives in **`agents.harness.validators`** (the harness JSONB, not `guardrails`); adding one = a class + a config entry.
 
 ### Interceptors (`harness/interceptors/`) — cross-cutting before/after
 `CostCapInterceptor` (**the demo circuit breaker** — block when `run.total_cost + estimate > max_cost_per_run_usd`, return synthetic budget-exceeded response), `IterationCapInterceptor`, `PIIRedactionInterceptor` (when bound to external channel), `EvalRecorderInterceptor` (eval mode only), `RecordingInterceptor` (record mode only), `TraceInterceptor` (OTel span per call). The seam where peekr / Langfuse plug in later — adding observability = one interceptor.
@@ -112,10 +127,10 @@ First-class, checked-in, diffable, Jinja2-templated, composable (`include:`), ge
 Same outer/inner graph, workflows, tools — only harness config changes. This table answers "how do you test in CI / measure quality / record the demo?" in one breath.
 
 ### Recording & replay (`harness/recording/`)
-`RecordingInterceptor` writes every completed call to `llm_recorded_calls`; `ReplayProvider` reads them back in `sequence` order. `LLM_MODE=record RECORDING_NAME=demo_market_intel make run` → go through the flow → auto-saved; `LLM_MODE=replay …` → free, deterministic, offline demos. Roundtrip test asserts replayed final state is byte-identical to the recorded run.
+`RecordingInterceptor` writes every completed call to `llm_recorded_calls`; `ReplayProvider` reads them back in `sequence` order. `LLM_MODE=record RECORDING_NAME=demo_market_intel make run` → go through the flow → auto-saved; `LLM_MODE=replay …` → free, deterministic, offline demos. Roundtrip test asserts replayed final state is byte-identical to the recorded run. **Image calls in recordings store a `media_assets` reference, not inlined base64** — keeps recordings small and the byte-identical assertion stable.
 
 ### Eval framework, on the same primitives (`harness/eval/`)
-An eval is a run with eval interceptors + a downstream judge — `execute_target` is the **same code path production uses**, so evals catch real regressions. Tables: `eval_datasets, eval_examples, eval_runs, eval_results`. Judge protocol returns `{scores{criterion→0..1}, rationale, passed, cost_usd}`. Ship `ExactMatchJudge` (free), `LLMJudge` (itself a `HarnessedCall` — traced/cost-tracked/replayable), `CompositeJudge` (weighted). Runner: bounded-parallel (`Semaphore(5)`), per-example execute-then-judge, emit live events. UI: `/evals` (datasets + pass-rate sparkline), `/evals/{dataset}`, `/evals/runs/{id}` (input|expected|actual|scores|pass|rationale + **link to the actual run's timeline**). Datasets: 10 examples per template, rubric-judged.
+An eval is a run with eval interceptors + a downstream judge — `execute_target` is the **same code path production uses**, so evals catch real regressions. Tables: `eval_datasets, eval_examples, eval_runs, eval_results`. Judge protocol returns `{scores{criterion→0..1}, rationale, passed, cost_usd}`. **Core:** `ExactMatchJudge` (free) + `LLMJudge` (itself a `HarnessedCall` — traced/cost-tracked/replayable). **`CompositeJudge` deferred** (first cut). Runner: bounded-parallel (`Semaphore(5)`), per-example execute-then-judge, emit live events. **UI is minimal** (a results `Table` + link to the actual run); the richer eval pages/sparklines are deferred. Datasets: 10 examples per template, rubric-judged. **All of eval is Phase 9 / deferred** — it scores zero rubric points directly; build only if demo + UI are solid.
 
 ### Harness CLI (`harness/cli.py`, ~300 lines over REST)
 `harness record start/stop/list/show`, `harness eval run/status/diff`, `harness script generate/validate/run`, `harness providers list/test`, `harness cost summary`. Recording/eval/script-gen are operational, not UI, workflows; pulling up a terminal in the walkthrough is more compelling than clicking.
@@ -172,13 +187,19 @@ Run **`vercel:react-best-practices`** over `.tsx` after each component batch (st
 ---
 
 ## Data model
-Base tables per `docs/architecture.md §4`: `agents, workflows, workflow_versions, channels, channel_bindings, runs, steps, messages, tool_invocations, schedules, outbound_messages` (costs denormalized message→step→run). Workflow rows carry the `variables/nodes/edges` schema above.
+Base tables per `docs/architecture.md §4`: `agents, workflows, workflow_versions, channels, channel_bindings, runs, steps, messages, tool_invocations, schedules, outbound_messages` (costs denormalized message→step→run).
 
-Harness/eval additions:
+**Schema reconciliation vs `architecture.md §4` (must land in the Phase 1 migration — code reads these):**
+- `channel_bindings.workflow_id UUID NULL` — webhook routing ("binding → workflow") needs it; arch DDL only had `agent_id`.
+- `agents.default_workflow_id UUID NULL` — the binding fallback chain reads it.
+- `agents.harness JSONB NOT NULL DEFAULT '{}'` — holds `{max_attempts, retry_on, validators[], interceptors[]}` for the config resolver (validators live here, **not** in `guardrails`).
+- `workflows.current_version INT` pointer; **drop `workflows.graph`** — the graph lives only in `workflow_versions.graph` (no dual write). The `variables/nodes/edges` schema lives in `workflow_versions.graph`.
+
+Harness/eval/media additions:
 - `llm_attempts` (one row per retry: provider, request, raw_response, error, validation_failures, latency_ms — UI shows "succeeded on attempt 2/3").
-- `llm_recordings`, `llm_recorded_calls` (sequence-ordered request/response/latency).
-- `eval_datasets, eval_examples, eval_runs, eval_results`.
-- `media_assets` (image attachments) + `messages.attachments JSONB`.
+- `llm_recordings`, `llm_recorded_calls` (sequence-ordered; image calls store a `media_assets` ref, not inline base64).
+- `eval_datasets, eval_examples, eval_runs, eval_results` (deferred phase, but migration can land early).
+- `media_assets` (image attachments) + `messages.attachments JSONB` referencing asset ids.
 
 Alembic migrations for all.
 
@@ -186,16 +207,19 @@ Alembic migrations for all.
 
 ## Build phases (dependency order)
 
-- **Phase 0 — Scaffold/infra.** docker-compose (postgres, redis, backend, worker, frontend, code-runner). `backend/pyproject.toml` (fastapi, uvicorn, sqlalchemy[asyncio], asyncpg, alembic, pydantic-settings, langgraph, anthropic, openai, boto3, redis, apscheduler, lark, structlog, opentelemetry, python-telegram-bot, tavily-python, httpx, jinja2, pyyaml, pytest). Frontend: Next.js + Tailwind + shadcn + React Flow + CodeMirror. `.env.example`. Health endpoints. **Milestone:** `docker-compose up` boots; health green.
-- **Phase 1 — Data model & repositories.** All models + Alembic initial migration + `repositories/` per aggregate. **Milestone:** migrations apply; CRUD repo tests pass.
-- **Phase 2 — Harness foundation (days 2–4).** `HarnessExecutor`, `LLMProvider` protocol, AnthropicProvider, CostCap + Trace interceptors, JSONSchema validator, cost models (Decimal). Then **StubProvider + Script + first integration test** (unblocks all later testing). **Milestone:** `test_executor` + stub-backed integration test pass.
-- **Phase 3 — Two-layer runtime.** `state.py`; `inner_graph.py` (prepare→llm→router→{tool|end}, guardrail chokepoint, every transition persists steps/messages, **all LLM calls via harness**); `outer_graph.py` (dynamic compile from JSON); `dsl/` (Lark grammar+AST+evaluator, no `eval`); `validation.py`; `executor.py` (worker pops run from Redis, runs outer graph). **Milestone:** `test_workflow_execution`, `test_graph_validation`, `test_conditional_routing`.
-- **Phase 4 — Tools, memory, guardrails.** Tools: web_search (Tavily), http_request (allowlist), send_to_agent (outbox + Redis inbox), send_to_channel, python_exec (code-runner over unix socket). Memory: buffer, summary, channel_scoped, **external→extremis**. Guardrails enforcer (CONTINUE/TERMINATE/PAUSE) at router. **Milestone:** tool/memory/guardrail units + extremis round-trip.
-- **Phase 5 — Channels + outbox + image ingestion.** `Channel` protocol; real `telegram.py` (text + photo download → `Attachment`, unsupported types flagged); slack/whatsapp stubs; `webhooks.py`; transactional outbox + dispatcher (backoff/retry); prompt-injection prefix. Harness `LLMRequest` → typed content blocks + image encoding in Anthropic/OpenAI providers; `media_assets` persistence; graceful-reply path for unsupported media. **Milestone:** `test_channel_roundtrip`; live bot reply; send a photo → agent describes it.
-- **Phase 6 — Scheduler + real-time.** APScheduler; events publish post-commit; `ws.py` forwards; backpressure + replay from `messages`; structlog context binding; OTel→optional Jaeger. **Milestone:** run streams live; reconnect replays cleanly.
-- **Phase 7 — Frontend (priority order, cut from bottom).** (1) schema-driven agent/workflow config forms + versioned saves; (2) React Flow builder (palette, canvas, inspector, DSL editor, live validation, dry-run highlight); (3) run timeline + live monitor (the demo surface); (4) eval pages. `lib/api.ts` from OpenAPI; `lib/ws.ts`. **Milestone:** create agent → build 2-agent workflow → trigger → watch timeline → see cost.
-- **Phase 8 — Recording/replay + eval (days 9–11).** RecordingInterceptor + ReplayProvider + recording CLI; eval data model + LLMJudge + runner + minimal eval UI; 10-example datasets per template. **Milestone:** record→replay roundtrip byte-identical; `harness eval run` produces results.
-- **Phase 9 — Templates, seed, docs, demo (day 12).** Two templates + `scripts/seed.py`; README per `docs/architecture.md §16` **plus the Harness chapter** (modes table, add-a-provider/validator, recording flow, eval framework) and the workflow chapter (graph schema, node types, add-a-template); `docs/{adding-a-channel,adding-a-tool,adding-a-template,workflow-dsl}.md`. Playwright golden-path E2E. **Record demo in replay mode by day 10–12, two takes.**
+Reordered per the review so the frontend (60% of the grade lives there: demo 40% + UI/UX 20%) is **not** all back-loaded — a thin vertical UI slice lands at Phase 4 and gets iterated, not rushed.
+
+- **Phase 0 — Scaffold/infra.** docker-compose (postgres, redis, backend, worker, frontend, code-runner, **extremis**). `backend/pyproject.toml` (fastapi, uvicorn, sqlalchemy[asyncio], asyncpg, alembic, pydantic-settings, langgraph, anthropic, openai, redis, apscheduler, lark, structlog, opentelemetry, python-telegram-bot, tavily-python, httpx, pyyaml, pytest). Frontend: Next.js + Tailwind + **shadcn init + tokens + app shell** + React Flow + CodeMirror. `.env.example`. Health endpoints (`/health/{db,redis,channels}`). **Milestone:** `docker-compose up` boots; health green; app shell renders.
+- **Phase 1 — Data model & repositories.** All models + **the reconciled columns** (`channel_bindings.workflow_id`, `agents.default_workflow_id`, `agents.harness`, `workflows.current_version`, no `workflows.graph`) + Alembic initial migration + `repositories/` per aggregate. **Milestone:** migrations apply; CRUD repo tests pass.
+- **Phase 2 — Harness thin core.** `HarnessExecutor`, `LLMProvider` protocol, **AnthropicProvider + StubProvider + ReplayProvider**, CostCap (conservative estimate) + Trace interceptors, JSONSchema + MaxLength validators, cost models (Decimal). **Milestone:** `test_executor`, `test_stub_provider`, `test_replay_provider`, stub-backed integration test pass.
+- **Phase 3 — Two-layer runtime + minimal events.** `state.py`; `inner_graph.py` (prepare→llm→router→{tool|end}, guardrail chokepoint, every transition persists steps/messages, **all LLM calls via harness**); `outer_graph.py` (dynamic compile from `workflow_versions.graph`); `dsl/` (Lark, no `eval`); `validation.py`; `executor.py` (worker consumes from the **at-least-once** queue). Worker **emits run events to Redis post-commit** (minimal, so the UI can subscribe). **Milestone:** `test_workflow_execution`, `test_graph_validation`, `test_conditional_routing`.
+- **Phase 4 — Thin UI vertical slice (pulled forward).** `lib/api.ts` (OpenAPI types) + `lib/ws.ts`. One **agent CRUD form** (schema-driven) and the **run timeline reading real WS events** from a stub-provider run. Demo surface is alive and iterable from here on. **Milestone:** create an agent in the UI → trigger a stub run → watch the timeline animate live.
+- **Phase 5 — Tools, memory, guardrails.** Tools: web_search (Tavily), http_request (allowlist), **send_to_agent (run-per-message + inbox)**, send_to_channel, python_exec (code-runner over unix socket). Memory: buffer, summary, channel_scoped, **external→extremis (graceful degrade)**. Guardrails enforcer (CONTINUE/TERMINATE; **`PAUSE`/`require_approval_for` is designed-not-built** — resume needs the stubbed `human` node). **Milestone:** tool/memory/guardrail units + extremis round-trip + an inter-agent handoff producing a second run.
+- **Phase 6 — Telegram (polling) + outbox + image ingestion.** `Channel` protocol; real `telegram.py` via **`getUpdates` long-polling** (no tunnel) — webhook handler also implemented + documented as production path; slack/whatsapp stubs; transactional outbox + dispatcher (backoff/retry); prompt-injection prefix. OpenAI provider + harness typed content blocks + image encoding; `media_assets` persistence; graceful-reply for unsupported media. **Milestone:** `test_channel_roundtrip`; live bot reply; photo → agent describes it; voice note → graceful reply.
+- **Phase 7 — Scheduler + full real-time.** APScheduler; WS gateway forwarding + **backpressure + replay from `messages`**; structlog context binding; OTel→optional Jaeger. **Milestone:** run streams live; reconnect replays cleanly; cron-triggered run fires.
+- **Phase 8 — Full frontend.** React Flow builder (palette, canvas, inspector, DSL editor, live validation, dry-run highlight); versioned workflow saves; channels UI; dashboard polish + the one timeline reveal animation. `vercel:react-best-practices` over each `.tsx` batch. **Milestone:** create agent → build 2-agent workflow → trigger via Telegram → watch timeline → see cost.
+- **Phase 9 — Deepen harness + eval (deferred / first cut).** Bedrock provider; CitationValidator; CompositeJudge; script Jinja2/`include:`; recording CLI; eval data model + LLMJudge + runner + minimal eval UI; 10-example datasets per template. **Milestone:** record→replay roundtrip byte-identical; `harness eval run` produces results. *Skip if Phase 8 demo isn't solid.*
+- **Phase 10 — Templates, seed, docs, demo.** Two templates + `scripts/seed.py`; README per `docs/architecture.md §16` (Harness chapter, workflow chapter, **scope-vs-cut table**, failure modes); `docs/{adding-a-channel,adding-a-tool,adding-a-template,workflow-dsl}.md`. Playwright golden-path E2E. **Record demo in replay mode by ~day 10, two takes.**
 
 ---
 
@@ -213,19 +237,22 @@ Alembic migrations for all.
 ---
 
 ## Scope & sequencing note
-This is a large build (~14 days; harness alone ~30% of budget). Cut order if time runs short, preserving the 40% demo + 30% architecture: drop `parallel` node → eval UI polish → Bedrock provider → CitationValidator. Never cut: the two-layer runtime, harness executor + Stub/Replay providers, Telegram round-trip, live timeline, cost circuit breaker, two templates. Keep the "scope vs cut" table in the README — it signals judgment.
+Large build (~14 days). The harness is built **thin-first** (Phase 2 core) and **deepened only in Phase 9**, so it can't starve the frontend the way "harness = ~30% of budget up front" would. **Cut order** if time runs short (preserving demo 40% + architecture 30%): whole **eval framework** → `parallel` node → script Jinja2/`include:` → Bedrock provider → CompositeJudge → CitationValidator → recording CLI (keep record/replay itself). **Never cut:** the two-layer runtime, harness thin core (executor + Anthropic/Stub/Replay + CostCap), at-least-once queue, Telegram round-trip (polling), the live timeline (lands Phase 4), cost circuit breaker, two templates, ChannelScoped memory. Keep the **"scope vs cut" table in the README** — it signals judgment and pre-answers half the live-session questions.
+
+**Open decision for the user:** the reviewer recommended *cutting* harness depth outright; I instead **re-sequenced** it (thin-first + deferred deep parts) to honor the locked "everything built." If you'd rather hard-cut the eval framework / Bedrock / composite judge entirely (not just defer), say so and I'll delete those sections rather than schedule them.
 
 ## Verification (end-to-end, in order)
 1. `cp .env.example .env` (fill keys) → `docker-compose up` → health endpoints green.
 2. `python scripts/seed.py` → two templates + sample agents in UI.
 3. `pytest backend/tests` — integration (`agent_lifecycle`, `workflow_execution`, `channel_roundtrip`, `conditional_routing`, `workflow_versioning`) + harness (`executor`, `stub/replay providers`, `validators`, `cost_models` Decimal, `recording` roundtrip, `eval_runner`) + DSL + guardrails + extremis round-trip.
 4. Playwright E2E: create agent → run workflow → timeline renders expected steps.
-5. **Live Telegram:** point bot webhook at local tunnel, message the bound agent, watch the run on the timeline, get a reply. (The 40%.)
-6. **Guardrail demo:** set `max_cost_per_run_usd=$0.10`; confirm graceful termination, red timeline block, `runs.error` set.
+5. **Live Telegram (polling, no tunnel):** start the bot (`getUpdates`), message the bound agent, watch the run on the timeline, get a reply. (The 40%.) Multi-turn continuity verified via `ChannelScopedMemory` across two separate messages/runs.
+6. **Guardrail demo:** set `max_cost_per_run_usd=$0.10`; confirm the conservative pre-call estimate trips the breaker, graceful termination, red timeline block, `runs.error` set.
+6c. **Crash-safety:** kill a worker mid-run; confirm the at-least-once queue re-delivers and the run completes (or is marked failed via heartbeat), not lost.
 6b. **Image round-trip:** send a photo via Telegram → agent (vision model) describes it; thumbnail renders in the timeline. Send a voice note → graceful "can't process that yet" reply.
 7. **Deterministic demo:** `LLM_MODE=record` once, then `LLM_MODE=replay` reproduces the run offline at zero API cost.
 8. **Eval:** `harness eval run market_intel_briefing` → results table populated, click a failed example → lands on its actual run timeline.
 9. **Extensibility proof:** diff to add the Slack stub (only `channels/slack.py` + registry line + UI form) — no orchestrator/agent/workflow changes; diff to add a provider (only `providers/<x>.py` + registry).
 
 ## Primary risk
-Not technical — the **demo recording**. Replay mode exists precisely to de-risk it: capture once, replay deterministically. Script the narrative before building, record by day 10, two takes. If a feature can't earn screen time, question whether it earns build time.
+Not technical — the **demo recording**. Two structural de-risks now baked in: **Telegram long-polling** (no public tunnel to fail mid-take) and **replay mode** (capture once, replay deterministically, offline, zero API cost). extremis ships in-compose and degrades gracefully, so neither the "single command" nor the offline demo depends on a reachable external. Script the narrative before building, record by ~day 10, two takes. If a feature can't earn screen time, question whether it earns build time.
