@@ -8,7 +8,9 @@ services:
       POSTGRES_PASSWORD: yuno
       POSTGRES_DB: yuno
     ports:
-      - "5432:5432"
+      # Host 55432 to avoid clashing with other local Postgres instances;
+      # in-network services still connect on postgres:5432.
+      - "55432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
