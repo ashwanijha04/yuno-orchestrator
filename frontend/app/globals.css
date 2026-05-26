@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Dark-first design tokens (zinc base, one accent). shadcn init refines these
+   in Phase 4/8; this is the baseline so the app shell renders with intent. */
+@theme inline {
+  --color-background: oklch(0.15 0 0);
+  --color-foreground: oklch(0.985 0 0);
+  --color-card: oklch(0.2 0 0);
+  --color-card-foreground: oklch(0.985 0 0);
+  --color-muted: oklch(0.27 0 0);
+  --color-muted-foreground: oklch(0.708 0 0);
+  --color-border: oklch(0.27 0 0);
+  --color-primary: oklch(0.62 0.19 260);
+  --color-primary-foreground: oklch(0.985 0 0);
+
+  /* Run/step status tokens */
+  --color-status-running: oklch(0.62 0.19 260);
+  --color-status-completed: oklch(0.72 0.19 150);
+  --color-status-failed: oklch(0.58 0.22 25);
+  --color-status-pending: oklch(0.55 0 0);
+  --color-status-paused: oklch(0.78 0.16 80);
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+  --radius: 0.625rem;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}

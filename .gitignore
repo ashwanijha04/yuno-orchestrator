@@ -2,11 +2,18 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-check/
 venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 .env
+
 # Node
 node_modules/
 .next/
+next-env.d.ts
+
 # Misc
 .DS_Store
 *.log
