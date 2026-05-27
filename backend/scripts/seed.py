@@ -56,13 +56,34 @@ AGENTS = [
 
 WORKFLOW_NAME = "Market Briefing (demo)"
 
+# A second template that demonstrates a conditional feedback loop.
+LOOP_AGENTS = [
+    {
+        "name": "Dex the Drafter",
+        "role": "Writes a first draft of the answer",
+        "system_prompt": "Write or revise a draft given the task and any prior critique.",
+        "soul_md": "You are Dex. You get something on the page fast, then improve it when challenged.",
+        "persona": {"traits": ["prolific", "open to feedback"], "tone": "energetic"},
+        "model_name": "claude-sonnet-4-5",
+    },
+    {
+        "name": "Cy the Critic",
+        "role": "Critiques the draft and decides if it needs another pass",
+        "system_prompt": "Critique the draft. If it isn't good enough, explain what to fix.",
+        "soul_md": "You are Cy. You are constructive but exacting. You only approve work you'd sign your name to.",
+        "persona": {"traits": ["exacting", "constructive"], "tone": "candid"},
+        "model_name": "claude-sonnet-4-5",
+    },
+]
+LOOP_WORKFLOW_NAME = "Draft & Critique (demo)"
+
 
 async def main() -> None:
     configure_logging()
     async with SessionFactory() as s:
         agent_repo = AgentRepository(s)
         ids: dict[str, str] = {}
-        for spec in AGENTS:
+        for spec in AGENTS + LOOP_AGENTS:
             existing = await agent_repo.get_by_name(spec["name"])
             if existing:
                 ids[spec["name"]] = str(existing.id)
@@ -70,7 +91,7 @@ async def main() -> None:
                 continue
             agent = await agent_repo.create(
                 model_provider="anthropic", temperature=0.7, max_tokens=1024,
-                memory_policy={"strategy": "buffer"}, guardrails={"max_iterations": 4, "max_cost_per_run_usd": "0.50"},
+                memory_policy={"strategy": "buffer"}, guardrails={"max_iterations": 6, "max_cost_per_run_usd": "0.50"},
                 harness={}, **spec,
             )
             ids[spec["name"]] = str(agent.id)
@@ -98,6 +119,29 @@ async def main() -> None:
             log.info("seed.workflow.created", name=WORKFLOW_NAME)
         else:
             log.info("seed.workflow.exists", name=WORKFLOW_NAME)
+
+        if not any(w.name == LOOP_WORKFLOW_NAME for w in await wf_repo.list()):
+            loop_graph = {
+                "version": "1.0",
+                "name": LOOP_WORKFLOW_NAME,
+                "description": "Drafter <-> Critic feedback loop, bounded by iteration_count.",
+                "entry_node": "drafter",
+                "variables": {"task": {"type": "string", "required": True}},
+                "nodes": [
+                    {"id": "drafter", "type": "agent", "agent_id": ids["Dex the Drafter"], "input_mapping": {"task": "$.variables.task", "critique": "$.artifacts.critique"}, "output_key": "draft"},
+                    {"id": "critic", "type": "agent", "agent_id": ids["Cy the Critic"], "input_mapping": {"draft": "$.artifacts.draft"}, "output_key": "critique"},
+                ],
+                "edges": [
+                    {"id": "e1", "from": "drafter", "to": "critic"},
+                    # Feedback loop: back to the drafter for another pass while under the
+                    # revision budget; otherwise the router ends the run.
+                    {"id": "e2", "from": "critic", "to": "drafter", "condition": "iteration_count < 4", "priority": 1},
+                ],
+            }
+            await wf_repo.create(name=LOOP_WORKFLOW_NAME, graph=loop_graph, description=loop_graph["description"])
+            log.info("seed.workflow.created", name=LOOP_WORKFLOW_NAME)
+        else:
+            log.info("seed.workflow.exists", name=LOOP_WORKFLOW_NAME)
 
         await s.commit()
     log.info("seed.done")

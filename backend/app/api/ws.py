@@ -64,8 +64,8 @@ async def run_events(websocket: WebSocket, run_id: uuid.UUID):
                 await websocket.send_text(msg["data"])
             else:
                 await asyncio.sleep(0.05)  # yield; also lets disconnects surface
-    except WebSocketDisconnect:
-        pass
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass  # client left or server is shutting down (reload) — exit cleanly
     except Exception as exc:  # noqa: BLE001
         log.warning("ws.error", run_id=str(run_id), detail=str(exc))
     finally:
