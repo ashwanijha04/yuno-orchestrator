@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
-    agents, channels, chat, health, orchestrate, runs, schedules, tools, webhooks, workflows, ws,
+    agents, channels, chat, health, orchestrate, runs, schedules, stats, tools, webhooks, workflows, ws,
 )
 from app.config import settings
 from app.logging import configure_logging, get_logger
@@ -67,6 +67,7 @@ app.include_router(tools.router)
 app.include_router(workflows.router)
 app.include_router(webhooks.router)
 app.include_router(schedules.router)
+app.include_router(stats.router)
 app.include_router(ws.router)
 
 

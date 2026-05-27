@@ -98,6 +98,19 @@ export interface Tool {
   requires_approval: boolean;
 }
 
+export interface Stats {
+  agents: number;
+  workflows: number;
+  channels: number;
+  runs_total: number;
+  runs_today: number;
+  running: number;
+  completed: number;
+  failed: number;
+  total_cost_usd: string;
+  total_tokens: number;
+}
+
 export interface Channel {
   id: string;
   type: string;
@@ -184,6 +197,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ input, max_cost_usd: maxCostUsd ?? null }),
     }),
+  stats: () => req<Stats>("/stats"),
   listRuns: () => req<Run[]>("/runs"),
   getRun: (id: string) => req<RunDetail>(`/runs/${id}`),
   orchestrate: (task: string, agentIds: string[], mode: "pipeline" | "auto") =>
