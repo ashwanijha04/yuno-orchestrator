@@ -34,26 +34,33 @@ class OrchestrateRequest(BaseModel):
     max_cost_usd: str | None = None
 
 
+SYSTEM_PROMPT = (
+    "You are an orchestrator coordinating a team of agents. Plan the task, then "
+    "delegate each subtask exactly ONCE to the most suitable agent via the "
+    "send_message_to_agent tool (recipient = the agent's exact name). The tool "
+    "returns that agent's reply immediately — use it. Do NOT re-delegate the same "
+    "subtask. Once you have the replies you need, stop calling tools and write the "
+    "final synthesized answer."
+)
+GUARDRAILS = {"max_iterations": 6, "max_cost_per_run_usd": "0.50"}
+
+
 async def _get_or_create_coordinator(session: AsyncSession):
     repo = AgentRepository(session)
     existing = await repo.get_by_name(COORDINATOR_NAME)
     if existing:
-        return existing
+        # Keep the existing coordinator's prompt/guardrails current.
+        return await repo.update(existing.id, system_prompt=SYSTEM_PROMPT, guardrails=GUARDRAILS)
     return await repo.create(
         name=COORDINATOR_NAME,
         role="Coordinates a team of agents to complete a task",
-        system_prompt=(
-            "You are an orchestrator. Break the task into subtasks and delegate each "
-            "to the most suitable available agent using the send_message_to_agent tool "
-            "(recipient = the agent's exact name). Then synthesize their replies into a "
-            "final answer."
-        ),
+        system_prompt=SYSTEM_PROMPT,
         model_provider="openai",
         model_name="gpt-4o-mini",
         task_type="normal",
         tool_ids=["send_message_to_agent"],
         memory_policy={"strategy": "buffer"},
-        guardrails={"max_iterations": 8},
+        guardrails=GUARDRAILS,
         harness={},
     )
 

@@ -211,6 +211,18 @@ class MessageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ChildRun(BaseModel):
+    """A sub-task a coordinator delegated to another agent (its own run)."""
+
+    id: uuid.UUID
+    agent_name: str | None
+    task: str | None  # the message the coordinator sent
+    status: str
+    output: str | None
+    total_cost_usd: Decimal
+
+
 class RunDetail(RunOut):
     steps: list[StepOut]
     messages: list[MessageOut]
+    children: list[ChildRun] = Field(default_factory=list)

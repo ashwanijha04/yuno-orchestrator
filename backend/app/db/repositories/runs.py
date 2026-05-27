@@ -118,3 +118,12 @@ class RunRepository:
             select(Step).where(Step.run_id == run_id).order_by(Step.started_at)
         )
         return result.scalars().all()
+
+    async def children_of(self, run_id: uuid.UUID) -> Sequence[Run]:
+        """Runs spawned by this run via send_message_to_agent (delegated sub-tasks)."""
+        result = await self.session.execute(
+            select(Run)
+            .where(Run.trigger_payload["parent_run_id"].astext == str(run_id))
+            .order_by(Run.started_at)
+        )
+        return result.scalars().all()

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
+    ChildRun,
     MessageOut,
     QuickRunRequest,
     RunDetail,
@@ -67,11 +68,12 @@ async def get_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session
     if agent_ids:
         rows = (await session.execute(select(Agent.id, Agent.name).where(Agent.id.in_(agent_ids)))).all()
         agent_names = {aid: name for aid, name in rows}
-    # First assistant message per step = that agent's output preview.
+    # The agent's output = its last non-empty assistant message in the step
+    # (for an orchestrator, earlier turns are tool calls; the last is the synthesis).
     step_output: dict = {}
     for m in messages:
-        if m.step_id and m.role == "assistant" and m.step_id not in step_output:
-            step_output[m.step_id] = m.content
+        if m.step_id and m.role == "assistant" and m.content.strip():
+            step_output[m.step_id] = m.content  # last with content wins
 
     wf = await session.get(Workflow, run.workflow_id)
     step_outs = []
@@ -81,11 +83,35 @@ async def get_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session
         so.output = step_output.get(s.id)
         step_outs.append(so)
 
+    # Delegated sub-tasks (runs spawned via send_message_to_agent).
+    children = await repo.children_of(run_id)
+    child_outs: list[ChildRun] = []
+    child_agent_names: list[str] = []
+    for c in children:
+        csteps = await repo.steps_for_run(c.id)
+        c_aids = {s.agent_id for s in csteps if s.agent_id}
+        cnames = {}
+        if c_aids:
+            rows = (await session.execute(select(Agent.id, Agent.name).where(Agent.id.in_(c_aids)))).all()
+            cnames = {aid: name for aid, name in rows}
+        cmsgs = await repo.messages_for_run(c.id)
+        coutput = next((m.content for m in reversed(cmsgs) if m.role == "assistant"), None)
+        aname = next(iter(cnames.values()), None) or (c.trigger_payload or {}).get("recipient")
+        if aname:
+            child_agent_names.append(aname)
+        child_outs.append(ChildRun(
+            id=c.id, agent_name=aname, task=(c.trigger_payload or {}).get("message"),
+            status=c.status, output=coutput, total_cost_usd=c.total_cost_usd,
+        ))
+
     base = RunOut.model_validate(run)
     base.workflow_name = wf.name if wf else None
     base.task = _task_of(run)
-    base.agent_names = [agent_names[a] for a in agent_ids if a in agent_names]
-    return RunDetail(**base.model_dump(), steps=step_outs, messages=[MessageOut.model_validate(m) for m in messages])
+    base.agent_names = [agent_names[a] for a in agent_ids if a in agent_names] + child_agent_names
+    return RunDetail(
+        **base.model_dump(), steps=step_outs,
+        messages=[MessageOut.model_validate(m) for m in messages], children=child_outs,
+    )
 
 
 @router.post("/workflow/{workflow_id}", response_model=RunOut, status_code=201)

@@ -1,9 +1,11 @@
-"""send_message_to_agent — async inter-agent messaging (run-per-message + inbox).
+"""send_message_to_agent — synchronous inter-agent delegation.
 
-Writes a message row on the sender's run (so the handoff is visible on the
-timeline / "who talks to whom"), then enqueues a *new run* for the recipient agent
-as a synthetic single-node workflow. Not in-graph injection — every handoff is a
-row and a run.
+Records the handoff on the caller's run (visible "who talks to whom"), creates a
+*linked child run* for the recipient, runs it inline, and RETURNS the recipient's
+reply so the caller (e.g. an orchestrator) can use it and decide what to do next.
+Returning the reply is what stops an orchestrator from blindly re-delegating.
+
+Recipients themselves don't get the delegation tool, so there's no recursion.
 """
 
 from __future__ import annotations
@@ -11,7 +13,6 @@ from __future__ import annotations
 import uuid
 
 from app.db.repositories import AgentRepository, RunRepository, WorkflowRepository
-from app.runtime import queue
 from app.tools.base import ToolContext
 
 
@@ -37,17 +38,13 @@ class SendToAgentTool:
                 return {"error": f"unknown recipient agent {recipient!r}"}
 
             runs = RunRepository(s)
-            # Record the handoff on the sender's run for visibility.
             if ctx.run_id is not None:
                 await runs.add_message(
                     ctx.run_id, role="agent", content=content,
                     agent_id=ctx.agent_id, recipient_agent_id=target.id,
                 )
-
             graph = {
-                "version": "1.0",
-                "name": f"msg->{target.name}",
-                "entry_node": "main",
+                "version": "1.0", "name": f"msg->{target.name}", "entry_node": "main",
                 "variables": {"message": {"type": "string"}},
                 "nodes": [{"id": "main", "type": "agent", "agent_id": str(target.id),
                            "input_mapping": {"message": "$.variables.message"}, "output_key": "reply"}],
@@ -56,15 +53,25 @@ class SendToAgentTool:
             wf = await WorkflowRepository(s).create(
                 name=f"msg->{target.name}·{uuid.uuid4().hex[:8]}", graph=graph
             )
-            new_run = await runs.create(
+            child = await runs.create(
                 workflow_id=wf.id, workflow_version=1, trigger_type="agent",
-                trigger_payload={"from_agent": str(ctx.agent_id), "message": content},
+                trigger_payload={
+                    "from_agent": str(ctx.agent_id), "message": content,
+                    "recipient": target.name,
+                    "parent_run_id": str(ctx.run_id) if ctx.run_id else None,
+                },
                 initial_state={"variables": {"message": content, "input": content}},
             )
             await s.commit()
-            recipient_run_id = new_run.id
-            recipient_name = target.name
+            child_id, recipient_name = child.id, target.name
 
-        await queue.ensure_group()
-        await queue.enqueue_run(recipient_run_id)
-        return {"status": "sent", "recipient": recipient_name, "run_id": str(recipient_run_id)}
+        # Run the recipient inline so we can return its reply to the caller.
+        # Lazy import avoids the engine<->tools import cycle.
+        from app.runtime.engine import RunEngine
+
+        await RunEngine(session_factory=ctx.session_factory).run(child_id)
+
+        async with ctx.session_factory() as s:
+            msgs = await RunRepository(s).messages_for_run(child_id)
+        reply = next((m.content for m in reversed(msgs) if m.role == "assistant"), "(no reply)")
+        return {"status": "completed", "recipient": recipient_name, "reply": reply, "run_id": str(child_id)}

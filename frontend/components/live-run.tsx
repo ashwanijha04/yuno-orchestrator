@@ -48,13 +48,28 @@ export function LiveRun({ runId }: { runId: string }) {
   // Agent (assistant) turns, for the conversation transcript.
   const turns = (run?.messages ?? []).filter((m) => ["assistant", "agent", "tool"].includes(m.role));
 
+  const agents = Array.from(new Set(run?.agent_names ?? []));
+  const running = status === "running" || status === "pending";
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 text-sm">
-        <StatusPill status={status} />
-        <span className="font-mono text-[var(--color-muted-foreground)]">${run?.total_cost_usd ?? "0"}</span>
-        {run?.task && <span className="truncate text-[var(--color-muted-foreground)]">· {run.task}</span>}
-        <a href={`/runs/${runId}`} className="ml-auto shrink-0 text-xs text-[var(--color-muted-foreground)] hover:underline">open run →</a>
+      {/* task header */}
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+        <div className="flex items-center gap-3">
+          {running && <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: "var(--color-status-running)" }} />}
+          <StatusPill status={status} />
+          <span className="font-mono text-xs text-[var(--color-muted-foreground)]">${run?.total_cost_usd ?? "0"}</span>
+          <a href={`/runs/${runId}`} className="ml-auto shrink-0 text-xs text-[var(--color-muted-foreground)] hover:underline">open run →</a>
+        </div>
+        {run?.task && <p className="mt-2 text-sm">{run.task}</p>}
+        {agents.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted-foreground)]">
+            <span>agents:</span>
+            {agents.map((a) => (
+              <span key={a} className="rounded-full border border-[var(--color-border)] px-2 py-0.5">{a}</span>
+            ))}
+          </div>
+        )}
       </div>
 
       {run?.error && (
@@ -89,21 +104,38 @@ export function LiveRun({ runId }: { runId: string }) {
         ))}
       </div>
 
-      {/* inter-agent handoffs + tool calls (if any) */}
-      {turns.some((m) => m.role === "agent" || m.role === "tool") && (
-        <div className="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-          <p className="text-sm font-medium">Handoffs &amp; tools</p>
-          {turns.filter((m) => m.role === "agent" || m.role === "tool").map((m) => (
-            m.role === "agent" ? (
-              <div key={m.id} className="border-l-2 border-[var(--color-status-running)] pl-3 text-sm">
-                <span className="text-xs font-medium text-[var(--color-status-running)]">→ handoff to another agent</span>
-                <p className="text-[var(--color-muted-foreground)]">{m.content}</p>
+      {/* delegated sub-tasks: each agent the coordinator messaged + its result */}
+      {(run?.children?.length ?? 0) > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Delegated to agents</p>
+          {run!.children.map((c) => (
+            <div key={c.id} className="rounded-[var(--radius)] border border-[var(--color-status-running)]/40 bg-[var(--color-card)] p-4">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-xs font-medium text-[var(--color-status-running)]">→ {c.agent_name ?? "agent"}</span>
+                <StatusPill status={c.status} />
+                <a href={`/runs/${c.id}`} className="ml-auto text-xs text-[var(--color-muted-foreground)] hover:underline">sub-run →</a>
               </div>
-            ) : (
-              <div key={m.id} className="pl-3 font-mono text-xs text-[var(--color-muted-foreground)]">↳ tool · {m.content.slice(0, 160)}</div>
-            )
+              {c.task && <p className="mb-2 text-xs italic text-[var(--color-muted-foreground)]">“{c.task}”</p>}
+              {c.output && (
+                <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3">
+                  <Markdown>{c.output}</Markdown>
+                </div>
+              )}
+            </div>
           ))}
         </div>
+      )}
+
+      {/* inter-agent handoff messages (the coordinator's delegation messages) */}
+      {turns.some((m) => m.role === "tool") && (
+        <details className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-xs">
+          <summary className="cursor-pointer text-[var(--color-muted-foreground)]">tool calls</summary>
+          <div className="mt-2 space-y-1">
+            {turns.filter((m) => m.role === "tool").map((m) => (
+              <div key={m.id} className="font-mono text-[var(--color-muted-foreground)]">↳ {m.content.slice(0, 200)}</div>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );

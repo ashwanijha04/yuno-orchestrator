@@ -76,9 +76,19 @@ export interface Message {
   ts: string;
 }
 
+export interface ChildRun {
+  id: string;
+  agent_name: string | null;
+  task: string | null;
+  status: string;
+  output: string | null;
+  total_cost_usd: string;
+}
+
 export interface RunDetail extends Run {
   steps: Step[];
   messages: Message[];
+  children: ChildRun[];
 }
 
 export interface Tool {
