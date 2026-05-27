@@ -181,16 +181,48 @@ class RunEngine:
     async def _load_memory(self, run_id: uuid.UUID, agent: dict) -> list[dict]:
         from app.memory import MemoryContext, get_memory_strategy
 
-        strategy = get_memory_strategy(agent.get("memory_policy"))
         async with self.session_factory() as s:
             run = await RunRepository(s).get(run_id)
-            external_id = (run.trigger_payload or {}).get("external_id") if run else None
-            ctx = MemoryContext(run_id=str(run_id), channel_external_id=external_id)
+            tp = (run.trigger_payload or {}) if run else {}
+            # Chat turns share a conversation_id: inject the prior turns regardless
+            # of the agent's configured strategy (a chat must remember context).
+            if tp.get("conversation_id"):
+                try:
+                    return await self._load_conversation(s, tp["conversation_id"], run_id)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("memory.conversation_load_failed", detail=str(exc))
+                    return []
+            strategy = get_memory_strategy(agent.get("memory_policy"))
+            ctx = MemoryContext(run_id=str(run_id), channel_external_id=tp.get("external_id"))
             try:
                 return await strategy.load(agent["id"], ctx, s)
             except Exception as exc:  # noqa: BLE001 — memory is best-effort
                 log.warning("memory.load_failed", detail=str(exc))
                 return []
+
+    async def _load_conversation(self, s, conversation_id: str, current_run_id: uuid.UUID, limit: int = 20) -> list[dict]:
+        """Prior user/assistant turns of this chat, across earlier runs."""
+        from app.db.models import Message, Run
+
+        run_ids = (
+            await s.execute(
+                select(Run.id).where(
+                    Run.trigger_payload["conversation_id"].astext == conversation_id,
+                    Run.id != current_run_id,
+                )
+            )
+        ).scalars().all()
+        if not run_ids:
+            return []
+        rows = (
+            await s.execute(
+                select(Message)
+                .where(Message.run_id.in_(run_ids), Message.role.in_(("user", "assistant")))
+                .order_by(Message.ts.desc())
+                .limit(limit)
+            )
+        ).scalars().all()
+        return [{"role": m.role, "content": m.content} for m in reversed(rows)]
 
     async def _load(self, run_id: uuid.UUID) -> tuple[dict, dict[str, dict]]:
         async with self.session_factory() as s:

@@ -172,6 +172,14 @@ export const api = {
   listRuns: () => req<Run[]>("/runs"),
   getRun: (id: string) => req<RunDetail>(`/runs/${id}`),
 
+  chat: (agentId: string, message: string, conversationId?: string) =>
+    req<{ conversation_id: string; reply: string; run_id: string }>("/chat", {
+      method: "POST",
+      body: JSON.stringify({ agent_id: agentId, message, conversation_id: conversationId ?? null }),
+    }),
+  chatHistory: (conversationId: string) =>
+    req<{ role: string; content: string }[]>(`/chat/${conversationId}`),
+
   listTools: () => req<Tool[]>("/tools"),
 
   listWorkflows: () => req<Workflow[]>("/workflows"),

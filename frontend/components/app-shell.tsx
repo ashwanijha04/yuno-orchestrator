@@ -2,11 +2,11 @@ import Link from "next/link";
 
 const NAV = [
   { href: "/", label: "Dashboard" },
+  { href: "/chat", label: "Chat" },
   { href: "/agents", label: "Agents" },
   { href: "/workflows", label: "Workflows" },
   { href: "/runs", label: "Runs" },
   { href: "/channels", label: "Channels" },
-  { href: "/evals", label: "Evals" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
