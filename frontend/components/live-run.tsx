@@ -1,15 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type RunDetail } from "@/lib/api";
 import { subscribeRun, type RunEvent } from "@/lib/ws";
-
-interface TimelineStep {
-  node_id: string;
-  agent?: string;
-  status: string;
-  cost_usd?: string;
-}
+import { Markdown } from "@/components/markdown";
 
 const STATUS_COLOR: Record<string, string> = {
   running: "var(--color-status-running)",
@@ -18,92 +12,97 @@ const STATUS_COLOR: Record<string, string> = {
   pending: "var(--color-status-pending)",
 };
 
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span className="rounded-full px-2.5 py-0.5 text-xs text-white" style={{ background: STATUS_COLOR[status] ?? "var(--color-muted)" }}>
+      {status}
+    </span>
+  );
+}
+
 export function LiveRun({ runId }: { runId: string }) {
   const [run, setRun] = useState<RunDetail | null>(null);
-  const [steps, setSteps] = useState<TimelineStep[]>([]);
-  const [status, setStatus] = useState("pending");
-  const [cost, setCost] = useState("0");
+  const [liveStatus, setLiveStatus] = useState("pending");
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setRun(null); setSteps([]); setStatus("pending"); setCost("0");
-    api.getRun(runId).then((r) => {
-      setRun(r); setStatus(r.status); setCost(r.total_cost_usd);
-      setSteps(r.steps.map((s) => ({ node_id: s.node_id, status: s.status, cost_usd: s.cost_usd })));
-    }).catch(() => {});
-
+    setRun(null); setLiveStatus("pending");
+    const load = () => api.getRun(runId).then((r) => { setRun(r); setLiveStatus(r.status); }).catch(() => {});
+    load();
+    // Coalesce refetches triggered by live events.
+    const refetch = () => {
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+      refetchTimer.current = setTimeout(load, 150);
+    };
     const unsub = subscribeRun(runId, (ev: RunEvent) => {
-      if (ev.type === "snapshot") {
-        setStatus(String(ev.status)); setCost(String(ev.total_cost_usd ?? "0"));
-        const snap = (ev.steps as TimelineStep[]) ?? [];
-        if (snap.length) setSteps(snap);
-        return;
-      }
-      if (ev.type === "step.started") {
-        setStatus("running");
-        setSteps((p) => p.some((s) => s.node_id === ev.node_id) ? p
-          : [...p, { node_id: String(ev.node_id), agent: ev.agent as string, status: "running" }]);
-      }
-      if (ev.type === "step.completed") {
-        setSteps((p) => p.map((s) => s.node_id === ev.node_id
-          ? { ...s, status: ev.blocked ? "failed" : "completed", cost_usd: String(ev.cost_usd ?? s.cost_usd) } : s));
-      }
-      if (ev.type === "run.completed" || ev.type === "run.failed") {
-        setStatus(ev.type === "run.completed" ? "completed" : "failed");
-        api.getRun(runId).then((r) => { setRun(r); setCost(r.total_cost_usd); });
-      }
+      if (ev.type === "step.started") setLiveStatus("running");
+      if (ev.type === "run.completed") setLiveStatus("completed");
+      if (ev.type === "run.failed") setLiveStatus("failed");
+      if (["step.started", "step.completed", "run.completed", "run.failed"].includes(ev.type)) refetch();
     });
-    return unsub;
+    return () => { unsub(); if (refetchTimer.current) clearTimeout(refetchTimer.current); };
   }, [runId]);
+
+  const status = run?.status && run.status !== "pending" ? run.status : liveStatus;
+  const steps = run?.steps ?? [];
+  // Agent (assistant) turns, for the conversation transcript.
+  const turns = (run?.messages ?? []).filter((m) => ["assistant", "agent", "tool"].includes(m.role));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 text-sm">
-        <span className="rounded-full px-3 py-1 text-xs text-white" style={{ background: STATUS_COLOR[status] ?? "var(--color-muted)" }}>{status}</span>
-        <span className="font-mono">${cost}</span>
-        <a href={`/runs/${runId}`} className="ml-auto text-xs text-[var(--color-muted-foreground)] hover:underline">open run →</a>
+        <StatusPill status={status} />
+        <span className="font-mono text-[var(--color-muted-foreground)]">${run?.total_cost_usd ?? "0"}</span>
+        {run?.task && <span className="truncate text-[var(--color-muted-foreground)]">· {run.task}</span>}
+        <a href={`/runs/${runId}`} className="ml-auto shrink-0 text-xs text-[var(--color-muted-foreground)] hover:underline">open run →</a>
       </div>
 
       {run?.error && (
-        <div className="rounded-md border border-[var(--color-status-failed)] p-2 text-xs text-[var(--color-status-failed)]">
-          {run.error}
-        </div>
+        <div className="rounded-md border border-[var(--color-status-failed)] p-2 text-xs text-[var(--color-status-failed)]">{run.error}</div>
       )}
 
-      <div className="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-        {steps.length === 0 && <p className="text-sm text-[var(--color-muted-foreground)]">Waiting for the first agent…</p>}
+      {/* who-is-doing-what: one card per agent step */}
+      <div className="space-y-2">
+        {steps.length === 0 && (
+          <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4 text-sm text-[var(--color-muted-foreground)]">
+            Waiting for the first agent…
+          </div>
+        )}
         {steps.map((s, i) => (
-          <div key={`${s.node_id}-${i}`} className="flex items-center gap-3">
-            <span className="w-40 truncate text-sm">{s.agent ?? s.node_id}</span>
-            <div className="h-6 flex-1 overflow-hidden rounded">
-              <div className="h-full transition-all duration-500"
-                style={{ width: s.status === "running" ? "40%" : "100%", background: STATUS_COLOR[s.status] ?? "var(--color-muted)", opacity: s.status === "running" ? 0.7 : 1 }} />
+          <div key={s.id} className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+            <div className="mb-2 flex items-center gap-3">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-muted)] text-xs font-mono">{i + 1}</span>
+              <span className="font-medium">{s.agent_name ?? s.node_id}</span>
+              <StatusPill status={s.status} />
+              <span className="ml-auto font-mono text-xs text-[var(--color-muted-foreground)]">{s.cost_usd !== "0" ? `$${s.cost_usd}` : ""}</span>
             </div>
-            <span className="w-20 text-right font-mono text-xs text-[var(--color-muted-foreground)]">{s.cost_usd ? `$${s.cost_usd}` : "—"}</span>
+            {s.status === "running" && !s.output && (
+              <p className="text-sm text-[var(--color-muted-foreground)]">working…</p>
+            )}
+            {s.output && (
+              <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3">
+                <Markdown>{s.output}</Markdown>
+              </div>
+            )}
+            {s.error && <p className="mt-2 text-xs text-[var(--color-status-failed)]">{s.error}</p>}
           </div>
         ))}
       </div>
 
-      {run && run.messages.length > 0 && (
+      {/* inter-agent handoffs + tool calls (if any) */}
+      {turns.some((m) => m.role === "agent" || m.role === "tool") && (
         <div className="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-          <p className="font-medium">Conversation &amp; handoffs</p>
-          {run.messages.map((m) => {
-            if (m.role === "agent") return (
+          <p className="text-sm font-medium">Handoffs &amp; tools</p>
+          {turns.filter((m) => m.role === "agent" || m.role === "tool").map((m) => (
+            m.role === "agent" ? (
               <div key={m.id} className="border-l-2 border-[var(--color-status-running)] pl-3 text-sm">
                 <span className="text-xs font-medium text-[var(--color-status-running)]">→ handoff to another agent</span>
                 <p className="text-[var(--color-muted-foreground)]">{m.content}</p>
               </div>
-            );
-            if (m.role === "tool") return (
+            ) : (
               <div key={m.id} className="pl-3 font-mono text-xs text-[var(--color-muted-foreground)]">↳ tool · {m.content.slice(0, 160)}</div>
-            );
-            const blocked = m.content.startsWith("[blocked");
-            return (
-              <div key={m.id} className="text-sm">
-                <span className="font-mono text-xs text-[var(--color-muted-foreground)]">{m.role}</span>
-                <p className={blocked ? "text-[var(--color-status-failed)]" : ""}>{m.content}</p>
-              </div>
-            );
-          })}
+            )
+          ))}
         </div>
       )}
     </div>

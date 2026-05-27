@@ -170,6 +170,10 @@ class RunOut(BaseModel):
     error: str | None
     started_at: datetime
     completed_at: datetime | None
+    # Enriched for the UI (not on the ORM row).
+    workflow_name: str | None = None
+    task: str | None = None
+    agent_names: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -178,6 +182,7 @@ class StepOut(BaseModel):
     id: uuid.UUID
     node_id: str
     agent_id: uuid.UUID | None
+    agent_name: str | None = None
     status: str
     started_at: datetime
     completed_at: datetime | None
@@ -185,6 +190,7 @@ class StepOut(BaseModel):
     tokens_in: int
     tokens_out: int
     error: str | None
+    output: str | None = None  # preview of what this agent produced
 
     model_config = {"from_attributes": True}
 

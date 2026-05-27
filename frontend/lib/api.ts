@@ -42,12 +42,16 @@ export interface Run {
   error: string | null;
   started_at: string;
   completed_at: string | null;
+  workflow_name: string | null;
+  task: string | null;
+  agent_names: string[];
 }
 
 export interface Step {
   id: string;
   node_id: string;
   agent_id: string | null;
+  agent_name: string | null;
   status: string;
   started_at: string;
   completed_at: string | null;
@@ -55,6 +59,7 @@ export interface Step {
   tokens_in: number;
   tokens_out: number;
   error: string | null;
+  output: string | null;
 }
 
 export interface Message {

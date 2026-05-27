@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, type Agent } from "@/lib/api";
+import { Markdown } from "@/components/markdown";
 
 interface Turn {
   role: string;
@@ -90,7 +91,7 @@ export default function ChatPage() {
                   ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
                   : "border border-[var(--color-border)] bg-[var(--color-background)]"
               }`}>
-                {t.content}
+                {t.role === "assistant" ? <Markdown>{t.content}</Markdown> : t.content}
               </div>
             </div>
           ))}

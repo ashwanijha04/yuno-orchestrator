@@ -16,16 +16,40 @@ from app.api.schemas import (
     RunWorkflowRequest,
     StepOut,
 )
+from app.db.models import Agent, Workflow
 from app.db.repositories import AgentRepository, RunRepository, WorkflowRepository
 from app.db.session import get_session
 from app.runtime import queue
+from sqlalchemy import select
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
+def _task_of(run) -> str | None:
+    tp = run.trigger_payload or {}
+    vars_ = (run.initial_state or {}).get("variables", {})
+    for src in (tp, vars_):
+        for k in ("task", "topic", "text", "input", "message"):
+            if src.get(k):
+                return str(src[k])
+    return None
+
+
 @router.get("", response_model=list[RunOut])
 async def list_runs(session: AsyncSession = Depends(get_session)):
-    return list(await RunRepository(session).list())
+    runs = await RunRepository(session).list()
+    wf_ids = {r.workflow_id for r in runs}
+    names: dict = {}
+    if wf_ids:
+        rows = (await session.execute(select(Workflow.id, Workflow.name).where(Workflow.id.in_(wf_ids)))).all()
+        names = {wid: name for wid, name in rows}
+    out = []
+    for r in runs:
+        item = RunOut.model_validate(r)
+        item.workflow_name = names.get(r.workflow_id)
+        item.task = _task_of(r)
+        out.append(item)
+    return out
 
 
 @router.get("/{run_id}", response_model=RunDetail)
@@ -36,11 +60,32 @@ async def get_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session
         raise HTTPException(404, "run not found")
     steps = await repo.steps_for_run(run_id)
     messages = await repo.messages_for_run(run_id)
-    return RunDetail(
-        **RunOut.model_validate(run).model_dump(),
-        steps=[StepOut.model_validate(s) for s in steps],
-        messages=[MessageOut.model_validate(m) for m in messages],
-    )
+
+    # Resolve agent names for the steps.
+    agent_ids = {s.agent_id for s in steps if s.agent_id}
+    agent_names: dict = {}
+    if agent_ids:
+        rows = (await session.execute(select(Agent.id, Agent.name).where(Agent.id.in_(agent_ids)))).all()
+        agent_names = {aid: name for aid, name in rows}
+    # First assistant message per step = that agent's output preview.
+    step_output: dict = {}
+    for m in messages:
+        if m.step_id and m.role == "assistant" and m.step_id not in step_output:
+            step_output[m.step_id] = m.content
+
+    wf = await session.get(Workflow, run.workflow_id)
+    step_outs = []
+    for s in steps:
+        so = StepOut.model_validate(s)
+        so.agent_name = agent_names.get(s.agent_id)
+        so.output = step_output.get(s.id)
+        step_outs.append(so)
+
+    base = RunOut.model_validate(run)
+    base.workflow_name = wf.name if wf else None
+    base.task = _task_of(run)
+    base.agent_names = [agent_names[a] for a in agent_ids if a in agent_names]
+    return RunDetail(**base.model_dump(), steps=step_outs, messages=[MessageOut.model_validate(m) for m in messages])
 
 
 @router.post("/workflow/{workflow_id}", response_model=RunOut, status_code=201)
