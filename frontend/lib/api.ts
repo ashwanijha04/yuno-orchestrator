@@ -171,6 +171,11 @@ export const api = {
     }),
   listRuns: () => req<Run[]>("/runs"),
   getRun: (id: string) => req<RunDetail>(`/runs/${id}`),
+  orchestrate: (task: string, agentIds: string[], mode: "pipeline" | "auto") =>
+    req<Run>("/orchestrate", {
+      method: "POST",
+      body: JSON.stringify({ task, agent_ids: agentIds, mode }),
+    }),
 
   chat: (agentId: string, message: string, conversationId?: string) =>
     req<{ conversation_id: string; reply: string; run_id: string }>("/chat", {
