@@ -28,6 +28,7 @@ class AgentRuntime:
     max_tokens: int
     guardrails: dict[str, Any]
     harness: dict[str, Any]
+    memory_policy: dict[str, Any] = field(default_factory=dict)
     tool_ids: list[str] = field(default_factory=list)
     tool_schemas: list[dict] = field(default_factory=list)
 
@@ -47,6 +48,7 @@ class AgentRuntime:
             max_tokens=agent.max_tokens,
             guardrails=agent.guardrails or {},
             harness=agent.harness or {},
+            memory_policy=agent.memory_policy or {},
             tool_ids=tool_ids,
             # Advertise the granted tools' schemas to the LLM (executed by the
             # ToolRuntime wired into the engine).
@@ -68,5 +70,6 @@ class AgentRuntime:
             "max_tokens": self.max_tokens,
             "guardrails": self.guardrails,
             "harness": self.harness,
+            "memory_policy": self.memory_policy,
             "tool_schemas": self.tool_schemas,
         }

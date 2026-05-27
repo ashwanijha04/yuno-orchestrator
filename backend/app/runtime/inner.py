@@ -60,15 +60,19 @@ async def run_agent_loop(
     budget: BudgetTracker,
     run_id: uuid.UUID,
     tool_runtime: ToolRuntime | None = None,
+    prior_messages: list[dict] | None = None,
 ) -> InnerResult:
     """Run one agent to completion. `agent` is the agent config row (as dict);
     `harness_runtime` is the resolved HarnessRuntime (max_attempts + validators +
-    interceptors)."""
+    interceptors). `prior_messages` are memory-loaded messages to inject first."""
     guardrails = agent.get("guardrails", {})
     max_iter = int(guardrails.get("max_iterations", 10))
     effective_system = compose_system_prompt(agent)
 
-    conversation: list[Message] = [Message(role="user", content=_render_input(agent_input))]
+    conversation: list[Message] = [
+        Message(role=m["role"], content=m["content"]) for m in (prior_messages or [])
+    ]
+    conversation.append(Message(role="user", content=_render_input(agent_input)))
     result = InnerResult(content="")
 
     for i in range(max_iter):

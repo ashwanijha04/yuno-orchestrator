@@ -16,7 +16,11 @@ from typing import Any
 from app.config import settings
 from app.harness.call import BudgetTracker, HarnessedCall, LLMRequest
 from app.harness.cost import get_cost_model
-from app.harness.interceptors import CostCapInterceptor, TraceInterceptor
+from app.harness.interceptors import (
+    CostCapInterceptor,
+    PIIRedactionInterceptor,
+    TraceInterceptor,
+)
 from app.harness.validators import JSONSchemaValidator, MaxLengthValidator
 
 VALIDATOR_REGISTRY = {
@@ -27,6 +31,7 @@ VALIDATOR_REGISTRY = {
 INTERCEPTOR_REGISTRY = {
     "cost_cap": lambda c: CostCapInterceptor(),
     "trace": lambda c: TraceInterceptor(),
+    "pii_redact": lambda c: PIIRedactionInterceptor(),
 }
 
 _ENV_DEFAULTS: dict[str, Any] = {

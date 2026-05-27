@@ -9,9 +9,9 @@ events are best-effort live transport.
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
 from typing import Any
 
+from decimal import Decimal
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Agent
@@ -53,6 +53,16 @@ class RunEngine:
 
     async def run(self, run_id: uuid.UUID) -> str:
         graph, agents = await self._load(run_id)
+        # Guardrail: if no explicit run budget, derive the cost circuit-breaker
+        # from the tightest per-agent guardrails.max_cost_per_run_usd.
+        if self.budget.cap_usd is None:
+            caps = [
+                Decimal(str(a["guardrails"]["max_cost_per_run_usd"]))
+                for a in agents.values()
+                if a.get("guardrails", {}).get("max_cost_per_run_usd")
+            ]
+            if caps:
+                self.budget.cap_usd = min(caps)
         await self._mark_running(run_id)
         await publish_event(run_id, "run.started", {})
 
@@ -107,6 +117,9 @@ class RunEngine:
             await s.commit()
         await publish_event(run_id, "step.started", {"node_id": node_id, "agent": agent["name"], "step_id": str(step_id)})
 
+        # Memory: query the agent's strategy for context to inject (queried, not pushed).
+        prior_messages = await self._load_memory(run_id, agent)
+
         # Inner reasoning loop (no DB).
         harness_runtime = self._resolve_harness(agent, node)
         result = await run_agent_loop(
@@ -118,6 +131,7 @@ class RunEngine:
             budget=self.budget,
             run_id=run_id,
             tool_runtime=self.tool_runtime,
+            prior_messages=prior_messages,
         )
 
         # Persist messages + complete step (commit) -> publish completed.
@@ -162,6 +176,20 @@ class RunEngine:
 
     def _resolve_harness(self, agent: dict, node: dict):
         return resolve_runtime(agent.get("harness"), node.get("harness_overrides"))
+
+    async def _load_memory(self, run_id: uuid.UUID, agent: dict) -> list[dict]:
+        from app.memory import MemoryContext, get_memory_strategy
+
+        strategy = get_memory_strategy(agent.get("memory_policy"))
+        async with self.session_factory() as s:
+            run = await RunRepository(s).get(run_id)
+            external_id = (run.trigger_payload or {}).get("external_id") if run else None
+            ctx = MemoryContext(run_id=str(run_id), channel_external_id=external_id)
+            try:
+                return await strategy.load(agent["id"], ctx, s)
+            except Exception as exc:  # noqa: BLE001 — memory is best-effort
+                log.warning("memory.load_failed", detail=str(exc))
+                return []
 
     async def _load(self, run_id: uuid.UUID) -> tuple[dict, dict[str, dict]]:
         async with self.session_factory() as s:
