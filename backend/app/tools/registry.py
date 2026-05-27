@@ -38,6 +38,19 @@ TOOL_DEFS: dict[str, ToolDef] = {
         "List the existing agents (name + role) so you can reuse one instead of creating a duplicate.",
         {"type": "object", "properties": {}},
     ),
+    "run_debate": ToolDef(
+        "run_debate",
+        "Run a multi-round debate among 2–4 agents on a topic; each sees the others' arguments. Returns the full transcript so you can make the final call.",
+        {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "The question or proposition to debate"},
+                "participants": {"type": "array", "items": {"type": "string"}, "description": "Exact names of 2–4 agents to debate"},
+                "rounds": {"type": "integer", "description": "Number of rounds (1–3, default 2)"},
+            },
+            "required": ["topic", "participants"],
+        },
+    ),
     "create_agent": ToolDef(
         "create_agent",
         "Create a new specialist agent when no existing agent fits. Returns its name so you can immediately delegate to it.",

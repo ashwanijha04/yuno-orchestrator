@@ -52,7 +52,7 @@ SYSTEM_PROMPT = (
     "Be decisive: prefer creating one well-scoped specialist over many tiny ones."
 )
 GUARDRAILS = {"max_iterations": 12, "max_cost_per_run_usd": "0.50"}
-COORDINATOR_TOOLS = ["list_agents", "create_agent", "send_message_to_agent"]
+COORDINATOR_TOOLS = ["list_agents", "create_agent", "send_message_to_agent", "run_debate"]
 
 
 async def _get_or_create_coordinator(session: AsyncSession):
