@@ -9,6 +9,7 @@ const STATUS_COLOR: Record<string, string> = {
   completed: "var(--color-status-completed)",
   failed: "var(--color-status-failed)",
   pending: "var(--color-status-pending)",
+  cancelled: "var(--color-muted-foreground)",
 };
 
 function ago(iso: string): string {
@@ -33,6 +34,11 @@ export default function RunsPage() {
     if (!confirm(`Delete this task?\n\n${r.task || r.workflow_name || r.id}`)) return;
     await api.deleteRun(r.id);
     setRuns((list) => list.filter((x) => x.id !== r.id));
+  }
+
+  async function stop(r: Run) {
+    await api.cancelRun(r.id).catch(() => {});
+    load();
   }
 
   async function clearFinished() {
@@ -75,6 +81,12 @@ export default function RunsPage() {
             </Link>
             <span className="shrink-0 text-xs capitalize" style={{ color: STATUS_COLOR[r.status] }}>{r.status}</span>
             <span className="hidden w-20 shrink-0 text-right font-mono text-xs text-[var(--color-muted-foreground)] sm:inline">${r.total_cost_usd}</span>
+            {(r.status === "running" || r.status === "pending") && (
+              <button onClick={() => stop(r)} title="Stop task"
+                className="shrink-0 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted-foreground)] hover:border-[var(--color-status-failed)] hover:text-[var(--color-status-failed)]">
+                ■
+              </button>
+            )}
             <button onClick={() => remove(r)} title="Delete task"
               className="shrink-0 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted-foreground)] hover:border-[var(--color-status-failed)] hover:text-[var(--color-status-failed)]">
               ✕

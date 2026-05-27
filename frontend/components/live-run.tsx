@@ -10,6 +10,7 @@ const STATUS_COLOR: Record<string, string> = {
   completed: "var(--color-status-completed)",
   failed: "var(--color-status-failed)",
   pending: "var(--color-status-pending)",
+  cancelled: "var(--color-muted-foreground)",
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -87,7 +88,14 @@ export function LiveRun({ runId }: { runId: string }) {
           {running && <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: "var(--color-status-running)" }} />}
           <StatusPill status={status} />
           <span className="font-mono text-xs text-[var(--color-muted-foreground)]">${run?.total_cost_usd ?? "0"}</span>
-          <a href={`/runs/${runId}`} className="ml-auto shrink-0 text-xs text-[var(--color-muted-foreground)] hover:underline">open run →</a>
+          {running && (
+            <button
+              onClick={() => api.cancelRun(runId).catch(() => {})}
+              className="ml-auto shrink-0 rounded-md border border-[var(--color-status-failed)] px-2 py-0.5 text-xs text-[var(--color-status-failed)] hover:bg-[var(--color-status-failed)] hover:text-white">
+              ■ Stop
+            </button>
+          )}
+          <a href={`/runs/${runId}`} className={`${running ? "" : "ml-auto "}shrink-0 text-xs text-[var(--color-muted-foreground)] hover:underline`}>open run →</a>
         </div>
         {run?.task && <p className="mt-2 text-sm">{run.task}</p>}
         {agents.length > 0 && (

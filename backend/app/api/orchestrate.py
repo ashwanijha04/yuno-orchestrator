@@ -30,27 +30,39 @@ COORDINATOR_NAME = "Orchestrator"
 class OrchestrateRequest(BaseModel):
     task: str
     agent_ids: list[uuid.UUID] = Field(default_factory=list)
-    mode: Literal["pipeline", "auto"] = "pipeline"
+    mode: Literal["pipeline", "auto"] = "auto"  # agentic by default
     max_cost_usd: str | None = None
 
 
 SYSTEM_PROMPT = (
-    "You are an orchestrator coordinating a team of agents. Plan the task, then "
-    "delegate each subtask exactly ONCE to the most suitable agent via the "
-    "send_message_to_agent tool (recipient = the agent's exact name). The tool "
-    "returns that agent's reply immediately — use it. Do NOT re-delegate the same "
-    "subtask. Once you have the replies you need, stop calling tools and write the "
-    "final synthesized answer."
+    "You are an orchestrator that completes a task by coordinating a team of agents.\n\n"
+    "Your toolkit:\n"
+    "- list_agents — see which agents already exist (reuse one before creating a duplicate).\n"
+    "- create_agent — spin up a NEW specialist when none fits; give it a clear name, a one-line role, "
+    "and a focused system_prompt. It returns the exact name to delegate to.\n"
+    "- send_message_to_agent — delegate a concrete subtask to an agent by its EXACT name; it runs that "
+    "agent and returns its reply for you to use.\n\n"
+    "Process:\n"
+    "1. Break the task into a few concrete subtasks.\n"
+    "2. For each subtask, reuse a fitting existing agent, or create_agent a new specialist for it.\n"
+    "3. Delegate the subtask with send_message_to_agent and use the reply. Never delegate the same "
+    "subtask twice.\n"
+    "4. When you have everything you need, STOP calling tools and write the final synthesized answer "
+    "for the user.\n\n"
+    "Be decisive: prefer creating one well-scoped specialist over many tiny ones."
 )
-GUARDRAILS = {"max_iterations": 6, "max_cost_per_run_usd": "0.50"}
+GUARDRAILS = {"max_iterations": 12, "max_cost_per_run_usd": "0.50"}
+COORDINATOR_TOOLS = ["list_agents", "create_agent", "send_message_to_agent"]
 
 
 async def _get_or_create_coordinator(session: AsyncSession):
     repo = AgentRepository(session)
     existing = await repo.get_by_name(COORDINATOR_NAME)
     if existing:
-        # Keep the existing coordinator's prompt/guardrails current.
-        return await repo.update(existing.id, system_prompt=SYSTEM_PROMPT, guardrails=GUARDRAILS)
+        # Keep the existing coordinator's prompt/tools/guardrails current.
+        return await repo.update(
+            existing.id, system_prompt=SYSTEM_PROMPT, guardrails=GUARDRAILS, tool_ids=COORDINATOR_TOOLS
+        )
     return await repo.create(
         name=COORDINATOR_NAME,
         role="Coordinates a team of agents to complete a task",
@@ -58,7 +70,7 @@ async def _get_or_create_coordinator(session: AsyncSession):
         model_provider="openai",
         model_name="gpt-4o-mini",
         task_type="normal",
-        tool_ids=["send_message_to_agent"],
+        tool_ids=COORDINATOR_TOOLS,
         memory_policy={"strategy": "buffer"},
         guardrails=GUARDRAILS,
         harness={},

@@ -11,7 +11,7 @@ export default function OrchestratePage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [task, setTask] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [mode, setMode] = useState<"pipeline" | "auto">("pipeline");
+  const [mode, setMode] = useState<"pipeline" | "auto">("auto");
   const [runId, setRunId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,12 +53,12 @@ export default function OrchestratePage() {
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-muted-foreground)]">Mode</label>
             <div className="flex gap-2">
-              {(["pipeline", "auto"] as const).map((m) => (
+              {(["auto", "pipeline"] as const).map((m) => (
                 <button key={m} type="button" onClick={() => setMode(m)}
                   className={`flex-1 rounded-md border px-3 py-2 text-sm capitalize ${mode === m ? "border-[var(--color-primary)]" : "border-[var(--color-border)]"}`}>
-                  {m}
+                  {m === "auto" ? "agentic" : m}
                   <span className="block text-[10px] text-[var(--color-muted-foreground)]">
-                    {m === "pipeline" ? "selected agents, in order" : "orchestrator delegates"}
+                    {m === "auto" ? "plans, creates & delegates" : "selected agents, in order"}
                   </span>
                 </button>
               ))}
@@ -66,7 +66,7 @@ export default function OrchestratePage() {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-muted-foreground)]">
-              Agents{mode === "auto" ? " (optional — it picks from all if none chosen)" : ""}
+              Agents{mode === "auto" ? " (optional — it reuses these or creates new ones as needed)" : ""}
             </label>
             <div className="max-h-72 space-y-1 overflow-auto">
               {agents.map((a) => (

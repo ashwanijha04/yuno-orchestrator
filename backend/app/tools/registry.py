@@ -30,8 +30,28 @@ TOOL_DEFS: dict[str, ToolDef] = {
     ),
     "send_message_to_agent": ToolDef(
         "send_message_to_agent",
-        "Send a message to another agent (enqueues a new run for the recipient).",
+        "Delegate a subtask to another agent by its exact name. Runs that agent and returns its reply.",
         {"type": "object", "properties": {"recipient": {"type": "string"}, "content": {"type": "string"}}, "required": ["recipient", "content"]},
+    ),
+    "list_agents": ToolDef(
+        "list_agents",
+        "List the existing agents (name + role) so you can reuse one instead of creating a duplicate.",
+        {"type": "object", "properties": {}},
+    ),
+    "create_agent": ToolDef(
+        "create_agent",
+        "Create a new specialist agent when no existing agent fits. Returns its name so you can immediately delegate to it.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Unique, descriptive agent name, e.g. 'Market Researcher'"},
+                "role": {"type": "string", "description": "One-line description of what this agent does"},
+                "system_prompt": {"type": "string", "description": "Instructions / personality for the agent"},
+                "task_type": {"type": "string", "enum": ["coding", "normal", "conversation"], "description": "Routes to the best model"},
+                "tool_ids": {"type": "array", "items": {"type": "string"}, "description": "Optional worker tools: web_search, http_request, send_to_channel, python_exec"},
+            },
+            "required": ["name", "role"],
+        },
     ),
     "send_to_channel": ToolDef(
         "send_to_channel",

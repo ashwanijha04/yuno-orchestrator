@@ -9,6 +9,7 @@ const STATUS_COLOR: Record<string, string> = {
   completed: "var(--color-status-completed)",
   failed: "var(--color-status-failed)",
   pending: "var(--color-status-pending)",
+  cancelled: "var(--color-muted-foreground)",
 };
 
 function ago(iso: string): string {

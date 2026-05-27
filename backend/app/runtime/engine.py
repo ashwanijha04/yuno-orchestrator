@@ -30,6 +30,10 @@ from sqlalchemy import select
 log = get_logger("engine")
 
 
+class RunCancelled(Exception):
+    """Raised when a user cancels a run mid-flight (cooperative check)."""
+
+
 class RunEngine:
     def __init__(
         self,
@@ -63,13 +67,12 @@ class RunEngine:
             ]
             if caps:
                 self.budget.cap_usd = min(caps)
-        await self._mark_running(run_id)
-        await publish_event(run_id, "run.started", {})
-
         node_runner = self._make_node_runner(run_id, agents)
         compiled = build_outer_graph(graph, node_runner)
 
         try:
+            await self._mark_running(run_id)
+            await publish_event(run_id, "run.started", {})
             variables = (await self._get_run_variables(run_id)) or {}
             final = await compiled.ainvoke(
                 initial_state(str(run_id), variables),
@@ -79,6 +82,11 @@ class RunEngine:
             await self._maybe_auto_reply(run_id, final)
             await publish_event(run_id, "run.completed", {})
             return "completed"
+        except RunCancelled:
+            log.info("run.cancelled", run_id=str(run_id))
+            await self._finalize(run_id, "cancelled", error="Cancelled by user")
+            await publish_event(run_id, "run.cancelled", {})
+            return "cancelled"
         except Exception as exc:  # noqa: BLE001 — surface failure on the run row
             log.exception("run.failed", run_id=str(run_id))
             await self._finalize(run_id, "failed", error=str(exc))
@@ -89,6 +97,9 @@ class RunEngine:
 
     def _make_node_runner(self, run_id: uuid.UUID, agents: dict[str, dict]):
         async def node_runner(node: dict, state: GraphState) -> dict:
+            # Cooperative cancellation: bail before each node if the user cancelled.
+            if await self._is_cancelled(run_id):
+                raise RunCancelled()
             node_type = node.get("type", "agent")
             if node_type == "agent":
                 return await self._run_agent_node(run_id, node, state, agents)
@@ -247,9 +258,18 @@ class RunEngine:
                 return None
             return (run.initial_state or {}).get("variables") or (run.trigger_payload or {})
 
+    async def _is_cancelled(self, run_id: uuid.UUID) -> bool:
+        async with self.session_factory() as s:
+            run = await RunRepository(s).get(run_id)
+            return run is not None and run.status == "cancelled"
+
     async def _mark_running(self, run_id: uuid.UUID) -> None:
         async with self.session_factory() as s:
-            await RunRepository(s).set_status(run_id, "running")
+            repo = RunRepository(s)
+            run = await repo.get(run_id)
+            if run and run.status == "cancelled":
+                raise RunCancelled()  # cancelled while still pending
+            await repo.set_status(run_id, "running")
             await s.commit()
 
     async def _finalize(self, run_id: uuid.UUID, status: str, error: str | None = None, final_state: dict | None = None) -> None:

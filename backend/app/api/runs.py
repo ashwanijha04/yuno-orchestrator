@@ -50,6 +50,24 @@ async def delete_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_sess
     await session.commit()
 
 
+@router.post("/{run_id}/cancel", response_model=RunOut)
+async def cancel_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+    """Request cancellation of an in-flight run. The engine checks the run's
+    status cooperatively before each agent step and stops cleanly."""
+    repo = RunRepository(session)
+    run = await repo.get(run_id)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    if run.status not in ("pending", "running"):
+        raise HTTPException(409, f"run is {run.status}, cannot cancel")
+    run = await repo.set_status(run_id, "cancelled", error="Cancelled by user")
+    await session.commit()
+    from app.observability.events import publish_event
+
+    await publish_event(run_id, "run.cancelled", {})
+    return run
+
+
 @router.get("", response_model=list[RunOut])
 async def list_runs(session: AsyncSession = Depends(get_session)):
     runs = await RunRepository(session).list()
