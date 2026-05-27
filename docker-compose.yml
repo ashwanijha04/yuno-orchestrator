@@ -62,7 +62,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: python -m app.runtime.executor
+    # watchfiles gives the worker hot-reload in dev (like uvicorn --reload for the
+    # API) so code edits reach the worker without a manual restart.
+    command: watchfiles "python -m app.runtime.executor" app
 
   code-runner:
     build: ./code-runner
