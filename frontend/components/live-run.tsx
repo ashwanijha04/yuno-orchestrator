@@ -76,6 +76,11 @@ export function LiveRun({ runId }: { runId: string }) {
   const steps = run?.steps ?? [];
   // Agent (assistant) turns, for the conversation transcript.
   const turns = (run?.messages ?? []).filter((m) => ["assistant", "agent", "tool"].includes(m.role));
+  // Per-step long-term-memory recall note (persisted as a 🧠 system message).
+  const memNote: Record<string, string> = {};
+  (run?.messages ?? []).forEach((m) => {
+    if (m.step_id && m.role === "system" && m.content.startsWith("🧠")) memNote[m.step_id] = m.content;
+  });
 
   const agents = Array.from(new Set(run?.agent_names ?? []));
   const running = status === "running" || status === "pending";
@@ -131,6 +136,11 @@ export function LiveRun({ runId }: { runId: string }) {
                 {s.cost_usd !== "0" && <span>${s.cost_usd}</span>}
               </span>
             </div>
+            {memNote[s.id] && (
+              <div className="mb-2 inline-flex items-center rounded-full border border-[var(--color-status-running)]/40 bg-[var(--color-status-running)]/10 px-2 py-0.5 text-xs text-[var(--color-status-running)]">
+                {memNote[s.id]}
+              </div>
+            )}
             {ACTIVE(s.status) && !s.output && <Thinking label="working" />}
             {s.output && (
               <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3">

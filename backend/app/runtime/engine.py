@@ -131,6 +131,16 @@ class RunEngine:
 
         # Memory: query the agent's strategy for context to inject (queried, not pushed).
         prior_messages = await self._load_memory(run_id, agent, query=_query_text(agent_input))
+        # Long-term recalls are tagged "[memory] " by ExternalMemoryStrategy.
+        recalled = sum(1 for m in prior_messages if str(m.get("content", "")).startswith("[memory]"))
+        if recalled:
+            async with self.session_factory() as s:
+                await RunRepository(s).add_message(
+                    run_id, role="system", step_id=step_id, agent_id=agent["id"],
+                    content=f"🧠 Recalled {recalled} memor{'y' if recalled == 1 else 'ies'} from long-term memory",
+                )
+                await s.commit()
+            await publish_event(run_id, "memory.recalled", {"step_id": str(step_id), "count": recalled})
 
         # Inner reasoning loop (no DB).
         harness_runtime = self._resolve_harness(agent, node)
@@ -203,10 +213,25 @@ class RunEngine:
             # of the agent's configured strategy (a chat must remember context).
             if tp.get("conversation_id"):
                 try:
-                    return await self._load_conversation(s, tp["conversation_id"], run_id)
+                    convo = await self._load_conversation(s, tp["conversation_id"], run_id)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("memory.conversation_load_failed", detail=str(exc))
-                    return []
+                    convo = []
+                # If the agent uses long-term memory, also recall ACROSS prior
+                # conversations so it "remembers you" between separate chats.
+                if (agent.get("memory_policy") or {}).get("strategy") == "external" and query:
+                    from app.memory import MemoryContext
+                    from app.memory.external import ExternalMemoryStrategy
+
+                    try:
+                        recalled = await ExternalMemoryStrategy()._recall(
+                            agent["id"], MemoryContext(run_id=str(run_id), query=query)
+                        )
+                        if recalled:
+                            convo = recalled + convo
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("memory.recall_failed", detail=str(exc))
+                return convo
             strategy = get_memory_strategy(agent.get("memory_policy"))
             ctx = MemoryContext(
                 run_id=str(run_id), channel_external_id=tp.get("external_id"), query=query

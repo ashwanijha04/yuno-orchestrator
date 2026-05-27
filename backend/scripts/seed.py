@@ -52,6 +52,26 @@ AGENTS = [
         "persona": {"traits": ["concise", "clear"], "tone": "warm but brisk", "values": ["brevity", "usefulness"]},
         "model_name": "claude-sonnet-4-5",
     },
+    {
+        # Demonstrates long-term memory out of the box: uses the `external`
+        # (extremis) strategy, so it remembers facts across separate tasks/chats.
+        "name": "Mnemo the Assistant",
+        "role": "A personal assistant that remembers you across conversations",
+        "system_prompt": (
+            "You are a personal assistant. Use any [memory] context provided to personalise "
+            "your answers, and pay attention to durable facts the user shares so you can recall "
+            "them later."
+        ),
+        "soul_md": (
+            "You are Mnemo. You remember what matters to the person and bring it up later, "
+            "unprompted, like a thoughtful colleague who never forgets."
+        ),
+        "persona": {"traits": ["attentive", "warm"], "tone": "friendly"},
+        "model_provider": "openai",
+        "model_name": "gpt-4o-mini",
+        "task_type": "normal",
+        "memory_policy": {"strategy": "external"},
+    },
 ]
 
 WORKFLOW_NAME = "Market Briefing (demo)"
@@ -89,11 +109,12 @@ async def main() -> None:
                 ids[spec["name"]] = str(existing.id)
                 log.info("seed.agent.exists", name=spec["name"])
                 continue
-            agent = await agent_repo.create(
+            defaults = dict(
                 model_provider="anthropic", temperature=0.7, max_tokens=1024,
-                memory_policy={"strategy": "buffer"}, guardrails={"max_iterations": 6, "max_cost_per_run_usd": "0.50"},
-                harness={}, **spec,
+                memory_policy={"strategy": "buffer"},
+                guardrails={"max_iterations": 6, "max_cost_per_run_usd": "0.50"}, harness={},
             )
+            agent = await agent_repo.create(**{**defaults, **spec})
             ids[spec["name"]] = str(agent.id)
             log.info("seed.agent.created", name=spec["name"])
 
