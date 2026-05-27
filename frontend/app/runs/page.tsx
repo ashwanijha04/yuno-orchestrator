@@ -31,10 +31,15 @@ export default function RunsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Runs</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Tasks</h1>
+        <Link href="/orchestrate" className="rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-sm text-[var(--color-primary-foreground)]">
+          ＋ New task
+        </Link>
+      </div>
       <div className="space-y-2">
         {runs.length === 0 && (
-          <p className="text-sm text-[var(--color-muted-foreground)]">No runs yet — orchestrate a task.</p>
+          <p className="text-sm text-[var(--color-muted-foreground)]">No tasks yet — orchestrate one.</p>
         )}
         {runs.map((r) => (
           <Link key={r.id} href={`/runs/${r.id}`}
