@@ -2,28 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, type Agent, type Approval, type Run, type Stats } from "@/lib/api";
+import { api, type Agent, type Approval, type Stats } from "@/lib/api";
 import { AgentConstellation } from "@/components/agent-constellation";
+import { MissionQueue } from "@/components/mission-queue";
 import { Markdown } from "@/components/markdown";
-
-const STATUS_COLOR: Record<string, string> = {
-  running: "var(--color-status-running)",
-  completed: "var(--color-status-completed)",
-  failed: "var(--color-status-failed)",
-  pending: "var(--color-status-pending)",
-  paused: "var(--color-status-paused)",
-  cancelled: "var(--color-muted-foreground)",
-};
 
 function Gauge({ label, value, accent, pulse }: { label: string; value: string | number; accent?: string; pulse?: boolean }) {
   return (
-    <div className="rounded-[var(--radius)] border bg-[var(--color-card)] p-3"
+    <div className="min-w-0 overflow-hidden rounded-[var(--radius)] border bg-[var(--color-card)] p-3"
       style={{ borderColor: pulse ? "var(--color-status-running)" : "var(--color-border)" }}>
       <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
-        {pulse && <span className="h-1.5 w-1.5 rounded-full hud-pulse" style={{ background: "var(--color-status-running)" }} />}
+        {pulse && <span className="h-1.5 w-1.5 shrink-0 rounded-full hud-pulse" style={{ background: "var(--color-status-running)" }} />}
         {label}
       </p>
-      <p className="mt-1 font-mono text-xl" style={accent ? { color: accent } : undefined}>{value}</p>
+      <p className="mt-1 truncate font-mono text-xl" style={accent ? { color: accent } : undefined}>{value}</p>
     </div>
   );
 }
@@ -96,7 +88,6 @@ function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
 
 export default function Cockpit() {
   const [s, setS] = useState<Stats | null>(null);
-  const [runs, setRuns] = useState<Run[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [jarvis, setJarvis] = useState<string | null>(null);
 
@@ -104,7 +95,6 @@ export default function Cockpit() {
     api.listAgents().then((a) => setJarvis(a.find((x: Agent) => x.name === "Jarvis")?.id ?? null)).catch(() => {});
     const load = () => {
       api.stats().then(setS).catch(() => {});
-      api.listRuns().then(setRuns).catch(() => {});
       api.listApprovals().then(setApprovals).catch(() => {});
     };
     load();
@@ -129,10 +119,13 @@ export default function Cockpit() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <div className="h-[420px] min-w-0"><JarvisConsole jarvisId={jarvis} /></div>
-        <div className="hud-grid h-[420px] min-w-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
-          <AgentConstellation />
+      <div className="grid grid-cols-1 gap-5 lg:h-[600px] lg:grid-cols-2">
+        <div className="h-[460px] min-w-0 lg:h-full"><JarvisConsole jarvisId={jarvis} /></div>
+        <div className="flex min-w-0 flex-col gap-4 lg:h-full">
+          <div className="hud-grid h-[300px] shrink-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
+            <AgentConstellation />
+          </div>
+          <div className="min-h-0 flex-1"><MissionQueue /></div>
         </div>
       </div>
 
@@ -158,26 +151,6 @@ export default function Cockpit() {
         </div>
       )}
 
-      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="font-medium">Recent activity</p>
-          <Link href="/runs" className="text-xs text-[var(--color-muted-foreground)] hover:underline">View all →</Link>
-        </div>
-        {runs.length === 0 && <p className="text-sm text-[var(--color-muted-foreground)]">No tasks yet — ask Jarvis.</p>}
-        <div className="space-y-1">
-          {runs.slice(0, 6).map((r) => (
-            <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center gap-3 rounded-md p-2 hover:bg-[var(--color-muted)]">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[r.status] ?? "var(--color-muted)" }} />
-              <span className="min-w-0 flex-1 truncate text-sm">{r.task || r.workflow_name || "Run"}</span>
-              {r.quality != null && (
-                <span className="shrink-0 font-mono text-[10px] text-[var(--color-muted-foreground)]">Q{Math.round(parseFloat(r.quality) * 100)}</span>
-              )}
-              <span className="shrink-0 text-xs capitalize" style={{ color: STATUS_COLOR[r.status] }}>{r.status}</span>
-              <span className="w-16 shrink-0 text-right font-mono text-xs text-[var(--color-muted-foreground)]">${r.total_cost_usd}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
