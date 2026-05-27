@@ -35,10 +35,14 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-function Stat({ label, value, href, accent }: { label: string; value: string | number; href?: string; accent?: string }) {
+function Stat({ label, value, href, accent, pulse }: { label: string; value: string | number; href?: string; accent?: string; pulse?: boolean }) {
   const inner = (
-    <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 transition-colors hover:border-[var(--color-primary)]">
-      <p className="text-sm text-[var(--color-muted-foreground)]">{label}</p>
+    <div className="rounded-[var(--radius)] border bg-[var(--color-card)] p-5 transition-colors hover:border-[var(--color-primary)]"
+      style={{ borderColor: pulse ? "var(--color-status-running)" : "var(--color-border)" }}>
+      <p className="flex items-center gap-2 text-sm text-[var(--color-muted-foreground)]">
+        {pulse && <span className="h-2 w-2 animate-pulse rounded-full" style={{ background: "var(--color-status-running)" }} />}
+        {label}
+      </p>
       <p className="mt-2 font-mono text-2xl" style={accent ? { color: accent } : undefined}>{value}</p>
     </div>
   );
@@ -74,7 +78,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Agents" value={s?.agents ?? "—"} href="/agents" />
         <Stat label="Tasks (24h)" value={s?.runs_today ?? "—"} href="/runs" />
-        <Stat label="Running now" value={s?.running ?? "—"} accent={s?.running ? "var(--color-status-running)" : undefined} href="/runs" />
+        <Stat label="Running now" value={s?.running ?? "—"} accent={s?.running ? "var(--color-status-running)" : undefined} pulse={!!s?.running} href="/runs" />
         <Stat label="Total spend" value={s ? `$${s.total_cost_usd}` : "—"} />
       </div>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

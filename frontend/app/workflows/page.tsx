@@ -10,13 +10,25 @@ export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { api.listWorkflows().then(setWorkflows).catch((e) => setError(String(e))); }, []);
+  const load = () => api.listWorkflows().then(setWorkflows).catch((e) => setError(String(e)));
+  useEffect(() => { load(); }, []);
 
   async function run(wf: Workflow) {
     const topic = prompt(`Run "${wf.name}" — topic / input:`, "OpenAI funding 2026");
     if (topic === null) return;
     const r = await api.runWorkflow(wf.id, { topic, input: topic });
     router.push(`/runs/${r.id}`);
+  }
+
+  async function duplicate(wf: Workflow) {
+    const copy = await api.duplicateWorkflow(wf.id);
+    router.push(`/workflows/${copy.id}/edit`);
+  }
+
+  async function remove(wf: Workflow) {
+    if (!confirm(`Delete workflow "${wf.name}" and its task history? This can't be undone.`)) return;
+    await api.deleteWorkflow(wf.id);
+    setWorkflows((list) => list.filter((x) => x.id !== wf.id));
   }
 
   return (
@@ -42,10 +54,12 @@ export default function WorkflowsPage() {
               <p className="font-medium">{wf.name}</p>
               <p className="text-sm text-[var(--color-muted-foreground)]">{wf.description ?? "—"}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-xs text-[var(--color-muted-foreground)]">v{wf.current_version}</span>
+            <div className="flex items-center gap-2">
+              <span className="mr-1 font-mono text-xs text-[var(--color-muted-foreground)]">v{wf.current_version}</span>
               <Link href={`/workflows/${wf.id}/edit`} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">Edit</Link>
+              <button onClick={() => duplicate(wf)} title="Duplicate" className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">Duplicate</button>
               <button onClick={() => run(wf)} className="rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-sm text-[var(--color-primary-foreground)]">Run</button>
+              <button onClick={() => remove(wf)} title="Delete workflow" className="rounded-md border border-[var(--color-border)] px-2 py-1.5 text-sm text-[var(--color-muted-foreground)] hover:border-[var(--color-status-failed)] hover:text-[var(--color-status-failed)]">✕</button>
             </div>
           </div>
         ))}

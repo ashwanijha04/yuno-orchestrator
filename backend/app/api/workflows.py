@@ -31,9 +31,38 @@ async def _known_agent_ids(session: AsyncSession) -> set[str]:
     return {str(r) for r in rows}
 
 
+# Workflows created automatically for chat / quick-run / orchestrate / inter-agent
+# messages are plumbing, not user artifacts — hide them from the Workflows tab.
+_SYNTHETIC_PREFIXES = ("Quick ·", "msg->", "chat:", "__chat__", "Orchestration")
+
+
+def _is_synthetic(name: str) -> bool:
+    return any(name.startswith(p) for p in _SYNTHETIC_PREFIXES)
+
+
 @router.get("", response_model=list[WorkflowOut])
 async def list_workflows(session: AsyncSession = Depends(get_session)):
-    return list(await WorkflowRepository(session).list())
+    return [w for w in await WorkflowRepository(session).list() if not _is_synthetic(w.name)]
+
+
+@router.delete("/{workflow_id}", status_code=204)
+async def delete_workflow(workflow_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+    if not await WorkflowRepository(session).delete(workflow_id):
+        raise HTTPException(404, "workflow not found")
+    await session.commit()
+
+
+@router.post("/{workflow_id}/duplicate", response_model=WorkflowDetail, status_code=201)
+async def duplicate_workflow(workflow_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+    repo = WorkflowRepository(session)
+    wf = await repo.get(workflow_id)
+    if wf is None:
+        raise HTTPException(404, "workflow not found")
+    graph = await repo.get_current_graph(workflow_id) or {}
+    # Names are unique — suffix to avoid collisions on repeated duplicates.
+    copy = await repo.create(name=f"{wf.name} (copy {uuid.uuid4().hex[:4]})", graph=graph, description=wf.description)
+    await session.commit()
+    return WorkflowDetail(**WorkflowOut.model_validate(copy).model_dump(), graph=graph)
 
 
 @router.post("/validate", response_model=ValidateResponse)

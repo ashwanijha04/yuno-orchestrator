@@ -52,6 +52,20 @@ class WorkflowRepository:
         version = await self.get_version(workflow_id, workflow.current_version)
         return version.graph if version else None
 
+    async def delete(self, workflow_id: uuid.UUID) -> bool:
+        """Delete a workflow, its versions (cascade), and its runs."""
+        from sqlalchemy import delete as sa_delete
+
+        from app.db.models import Run
+
+        wf = await self.get(workflow_id)
+        if wf is None:
+            return False
+        await self.session.execute(sa_delete(Run).where(Run.workflow_id == workflow_id))
+        await self.session.delete(wf)
+        await self.session.flush()
+        return True
+
     async def new_version(self, workflow_id: uuid.UUID, graph: dict) -> WorkflowVersion | None:
         """Append an immutable version and advance the pointer."""
         workflow = await self.get(workflow_id)

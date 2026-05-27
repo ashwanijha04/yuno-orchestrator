@@ -224,6 +224,8 @@ export const api = {
     req<WorkflowDetail>("/workflows", { method: "POST", body: JSON.stringify(body) }),
   saveWorkflowVersion: (id: string, graph: WorkflowGraph) =>
     req<WorkflowDetail>(`/workflows/${id}/versions`, { method: "POST", body: JSON.stringify({ graph }) }),
+  deleteWorkflow: (id: string) => req<void>(`/workflows/${id}`, { method: "DELETE" }),
+  duplicateWorkflow: (id: string) => req<WorkflowDetail>(`/workflows/${id}/duplicate`, { method: "POST" }),
   validateWorkflow: (graph: WorkflowGraph) =>
     req<{ valid: boolean; issues: ValidationIssue[] }>("/workflows/validate", {
       method: "POST",

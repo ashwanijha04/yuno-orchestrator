@@ -35,6 +35,12 @@ function Thinking({ label = "thinking" }: { label?: string }) {
 
 const ACTIVE = (s: string) => s === "running" || s === "pending";
 
+function latency(start: string, end: string | null): string | null {
+  if (!end) return null;
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  return ms >= 0 ? `${(ms / 1000).toFixed(1)}s` : null;
+}
+
 export function LiveRun({ runId }: { runId: string }) {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [liveStatus, setLiveStatus] = useState("pending");
@@ -111,7 +117,11 @@ export function LiveRun({ runId }: { runId: string }) {
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-muted)] text-xs font-mono">{i + 1}</span>
               <span className="font-medium">{s.agent_name ?? s.node_id}</span>
               <StatusPill status={s.status} />
-              <span className="ml-auto font-mono text-xs text-[var(--color-muted-foreground)]">{s.cost_usd !== "0" ? `$${s.cost_usd}` : ""}</span>
+              <span className="ml-auto flex items-center gap-3 font-mono text-xs text-[var(--color-muted-foreground)]">
+                {s.tokens_in + s.tokens_out > 0 && <span>{(s.tokens_in + s.tokens_out).toLocaleString()} tok</span>}
+                {latency(s.started_at, s.completed_at) && <span>{latency(s.started_at, s.completed_at)}</span>}
+                {s.cost_usd !== "0" && <span>${s.cost_usd}</span>}
+              </span>
             </div>
             {ACTIVE(s.status) && !s.output && <Thinking label="working" />}
             {s.output && (
