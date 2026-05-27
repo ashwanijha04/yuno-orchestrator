@@ -112,3 +112,9 @@ class RunRepository:
             select(Message).where(Message.run_id == run_id).order_by(Message.ts)
         )
         return result.scalars().all()
+
+    async def steps_for_run(self, run_id: uuid.UUID) -> Sequence[Step]:
+        result = await self.session.execute(
+            select(Step).where(Step.run_id == run_id).order_by(Step.started_at)
+        )
+        return result.scalars().all()

@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health
+from app.api import agents, health, runs, ws
 from app.config import settings
 from app.logging import configure_logging, get_logger
 from app.redis_client import close_redis, get_redis
@@ -49,6 +49,9 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(agents.router)
+app.include_router(runs.router)
+app.include_router(ws.router)
 
 
 @app.get("/")

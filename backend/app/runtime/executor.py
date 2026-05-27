@@ -27,8 +27,10 @@ async def _check_dependencies() -> None:
     await get_redis().ping()
 
 
-def _build_engine() -> RunEngine:
-    return RunEngine(session_factory=SessionFactory, provider=get_provider())
+def _build_engine(budget_cap_usd=None) -> RunEngine:
+    return RunEngine(
+        session_factory=SessionFactory, provider=get_provider(), budget_cap_usd=budget_cap_usd
+    )
 
 
 async def main() -> None:
@@ -59,9 +61,18 @@ async def main() -> None:
 
 async def _process(run_id: str) -> None:
     import uuid
+    from decimal import Decimal
+
+    from app.db.repositories import RunRepository
 
     log.info("worker.run.start", run_id=run_id)
-    eng = _build_engine()
+    # Honor a per-run cost cap stashed in the trigger payload.
+    cap = None
+    async with SessionFactory() as s:
+        run = await RunRepository(s).get(uuid.UUID(run_id))
+        if run and run.trigger_payload and run.trigger_payload.get("max_cost_usd"):
+            cap = Decimal(str(run.trigger_payload["max_cost_usd"]))
+    eng = _build_engine(budget_cap_usd=cap)
     status = await eng.run(uuid.UUID(run_id))
     log.info("worker.run.done", run_id=run_id, status=status)
 

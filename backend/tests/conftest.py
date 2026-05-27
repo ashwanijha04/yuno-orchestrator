@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -25,6 +26,18 @@ TEST_DATABASE_URL = os.environ.get(
         "DATABASE_URL", "postgresql+asyncpg://yuno:yuno@localhost:55432/yuno"
     ),
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_redis_pool():
+    # The global Redis pool binds to the loop that created it; pytest-asyncio
+    # uses a fresh loop per test, so reset the reference around each test to
+    # avoid "event loop is closed" when a stale pool is reused.
+    import app.redis_client as rc
+
+    rc._pool = None
+    yield
+    rc._pool = None
 
 
 @pytest_asyncio.fixture

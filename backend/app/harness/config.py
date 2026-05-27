@@ -62,11 +62,23 @@ def build_interceptors(config: dict) -> list:
 
 
 def get_provider(mode: str | None = None):
-    """Select a provider by harness mode. Stub/replay are wired by the caller
-    with their script/recording; this returns the live providers."""
+    """Select a provider by harness mode.
+
+    - stub:   deterministic, no API key needed (canned response when unscripted)
+    - live/record: the configured live provider (Anthropic by default)
+    Replay is wired by the caller with a recording (Phase 9).
+    """
     mode = mode or settings.llm_mode
+    if mode == "stub":
+        from app.harness.providers import Script, StubProvider
+
+        return StubProvider(Script([]), strict=False)
     if settings.llm_provider_default == "anthropic":
         from app.harness.providers.anthropic import AnthropicProvider
 
         return AnthropicProvider()
+    if settings.llm_provider_default == "openai":
+        from app.harness.providers.openai import OpenAIProvider
+
+        return OpenAIProvider()
     raise ValueError(f"unsupported provider default: {settings.llm_provider_default}")

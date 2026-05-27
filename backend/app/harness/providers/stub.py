@@ -86,7 +86,15 @@ class StubProvider:
                     f"No script entry for agent={request.metadata.get('agent_id')} "
                     f"call_index={idx}"
                 )
-            return LLMResponse(content="", tokens_in=0, tokens_out=0)
+            # Unscripted (lenient) mode: a visible canned response so runs are
+            # demoable without keys. Set LLM_MODE=live for real output.
+            text = _request_text(request)
+            return LLMResponse(
+                content=f"[stub] acknowledged: {text[:160]}",
+                tokens_in=max(1, len(text) // 4),
+                tokens_out=12,
+                finish_reason="end_turn",
+            )
 
         if entry.raises == "retryable":
             raise RetryableError("scripted retryable error")
