@@ -13,6 +13,12 @@ COPY . .
 
 RUN pip install --upgrade pip && pip install -e ".[dev]"
 
+# extremis (long-term agent memory) installed WITHOUT its deps so we don't drag
+# in sentence-transformers/torch — we use the OpenAI embedder, whose code path
+# never imports sentence-transformers (it's a lazy import). The lean runtime deps
+# extremis actually needs (numpy, psycopg2, pgvector, openai) are in pyproject.
+RUN pip install --no-deps extremis==0.3.1
+
 EXPOSE 8000
 
 # Default command runs the control plane; the worker service overrides it.

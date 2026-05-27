@@ -130,7 +130,7 @@ class RunEngine:
         await publish_event(run_id, "step.started", {"node_id": node_id, "agent": agent["name"], "step_id": str(step_id)})
 
         # Memory: query the agent's strategy for context to inject (queried, not pushed).
-        prior_messages = await self._load_memory(run_id, agent)
+        prior_messages = await self._load_memory(run_id, agent, query=_query_text(agent_input))
 
         # Inner reasoning loop (no DB).
         harness_runtime = self._resolve_harness(agent, node)
@@ -164,6 +164,10 @@ class RunEngine:
              "cost_usd": str(result.cost_usd), "blocked": result.blocked_reason},
         )
 
+        # Long-term memory: agents on the `external` strategy accumulate what they
+        # did across tasks (no-op for other strategies / when extremis is off).
+        await self._remember(run_id, agent, _query_text(agent_input), result.content)
+
         update: dict = {
             "current_agent": node_id,
             "iteration_count": state.get("iteration_count", 0) + 1,
@@ -189,7 +193,7 @@ class RunEngine:
     def _resolve_harness(self, agent: dict, node: dict):
         return resolve_runtime(agent.get("harness"), node.get("harness_overrides"))
 
-    async def _load_memory(self, run_id: uuid.UUID, agent: dict) -> list[dict]:
+    async def _load_memory(self, run_id: uuid.UUID, agent: dict, query: str | None = None) -> list[dict]:
         from app.memory import MemoryContext, get_memory_strategy
 
         async with self.session_factory() as s:
@@ -204,12 +208,26 @@ class RunEngine:
                     log.warning("memory.conversation_load_failed", detail=str(exc))
                     return []
             strategy = get_memory_strategy(agent.get("memory_policy"))
-            ctx = MemoryContext(run_id=str(run_id), channel_external_id=tp.get("external_id"))
+            ctx = MemoryContext(
+                run_id=str(run_id), channel_external_id=tp.get("external_id"), query=query
+            )
             try:
                 return await strategy.load(agent["id"], ctx, s)
             except Exception as exc:  # noqa: BLE001 — memory is best-effort
                 log.warning("memory.load_failed", detail=str(exc))
                 return []
+
+    async def _remember(self, run_id: uuid.UUID, agent: dict, task: str, output: str) -> None:
+        """Write the agent's turn to long-term memory (external strategy only)."""
+        if (agent.get("memory_policy") or {}).get("strategy") != "external":
+            return
+        from app.memory.external import remember
+
+        cid = str(run_id)
+        if task:
+            await remember(agent["id"], f"Task: {task}", role="user", conversation_id=cid)
+        if output:
+            await remember(agent["id"], output, role="assistant", conversation_id=cid)
 
     async def _load_conversation(self, s, conversation_id: str, current_run_id: uuid.UUID, limit: int = 20) -> list[dict]:
         """Prior user/assistant turns of this chat, across earlier runs."""
@@ -299,6 +317,15 @@ class RunEngine:
                     content=str(reply), status="pending",
                 ))
                 await s.commit()
+
+
+def _query_text(agent_input: Any) -> str:
+    """Flatten a node's resolved input into a recall cue for long-term memory."""
+    if isinstance(agent_input, str):
+        return agent_input
+    if isinstance(agent_input, dict):
+        return " ".join(str(v) for v in agent_input.values() if v)
+    return str(agent_input or "")
 
 
 def _resolve_input(input_mapping: dict | None, state: GraphState, agent: dict) -> Any:

@@ -50,9 +50,12 @@ class Settings(BaseSettings):
     telegram_transport: Literal["polling", "webhook"] = "polling"
     public_base_url: str | None = None  # for webhook registration (tunnel URL)
 
-    # --- Memory ---
-    extremis_store: str | None = None  # e.g. postgres DSN for the extremis server
-    extremis_url: str | None = None
+    # --- Memory (extremis runs embedded; see app/memory/external.py) ---
+    # When set, the `external` strategy is active. extremis reads its own
+    # EXTREMIS_* env (store, postgres url, embedder, dim, home) via its Config;
+    # we only need to know whether it's configured to enable the strategy.
+    extremis_store: str | None = None  # "postgres" | "sqlite" | ...
+    extremis_url: str | None = None    # legacy/no longer used (embedded, not HTTP)
 
     # --- App ---
     app_env: Literal["dev", "prod"] = "dev"

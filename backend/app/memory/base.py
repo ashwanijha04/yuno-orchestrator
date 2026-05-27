@@ -16,6 +16,7 @@ class MemoryContext:
     run_id: str | None
     channel_external_id: str | None = None
     max_messages: int = 20
+    query: str | None = None  # the current input, used as the long-term recall cue
 
 
 @runtime_checkable

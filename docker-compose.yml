@@ -2,7 +2,9 @@ name: yuno
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector image (drop-in PG 16 superset). Stores both the app's data and
+    # extremis's long-term memory embeddings (vector(1536), HNSW cosine index).
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: yuno
       POSTGRES_PASSWORD: yuno
@@ -35,6 +37,13 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://yuno:yuno@postgres:5432/yuno
       REDIS_URL: redis://redis:6379/0
+      # extremis long-term memory: embedded SDK, our Postgres + pgvector as the
+      # vector store (namespaced per agent), full 1536-dim OpenAI embeddings
+      # (reuses OPENAI_API_KEY from .env — no model download, no torch).
+      EXTREMIS_STORE: postgres
+      EXTREMIS_POSTGRES_URL: postgresql://yuno:yuno@postgres:5432/yuno
+      EXTREMIS_EMBEDDER: text-embedding-3-small
+      EXTREMIS_EMBEDDING_DIM: "1536"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -54,6 +63,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://yuno:yuno@postgres:5432/yuno
       REDIS_URL: redis://redis:6379/0
+      # Same extremis config as the backend — the worker runs the engine too and
+      # shares the memory store via the same Postgres (no shared file needed).
+      EXTREMIS_STORE: postgres
+      EXTREMIS_POSTGRES_URL: postgresql://yuno:yuno@postgres:5432/yuno
+      EXTREMIS_EMBEDDER: text-embedding-3-small
+      EXTREMIS_EMBEDDING_DIM: "1536"
     volumes:
       - ./backend:/app
       - coderunner-sock:/var/run
@@ -92,16 +107,8 @@ services:
       - backend
     command: npm run dev
 
-  # extremis memory server — optional, started with `--profile memory`.
-  # The ExternalMemoryStrategy degrades gracefully when this is absent, so the
-  # core stack boots without it. Configure the image/command for your build.
-  extremis:
-    profiles: ["memory"]
-    image: extremis/server:latest
-    environment:
-      EXTREMIS_STORE: ${EXTREMIS_STORE:-}
-    ports:
-      - "8080:8080"
+# Note: extremis runs *embedded* in the backend/worker (the `external` memory
+# strategy), backed by the Postgres above — there is no separate memory server.
 
 volumes:
   pgdata:

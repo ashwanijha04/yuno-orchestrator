@@ -24,6 +24,11 @@ dependencies = [
     "tavily-python>=0.5",
     "python-telegram-bot>=21.9",
     "pyyaml>=6.0",
+    # Lean runtime deps for extremis (installed --no-deps in the Dockerfile so
+    # torch/sentence-transformers stay out): postgres+pgvector store, numpy maths.
+    "numpy>=1.26",
+    "psycopg2-binary>=2.9",
+    "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]
