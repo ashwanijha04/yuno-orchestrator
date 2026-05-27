@@ -17,3 +17,6 @@ next-env.d.ts
 # Misc
 .DS_Store
 *.log
+
+# TS build cache
+*.tsbuildinfo
