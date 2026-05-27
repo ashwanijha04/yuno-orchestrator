@@ -51,7 +51,9 @@ body {
 
 /* Rendered markdown (agent output / chat). Tailwind preflight strips defaults,
    so restore readable typography scoped to .md. */
-.md { font-size: 0.875rem; line-height: 1.6; }
+.md { font-size: 0.875rem; line-height: 1.6; overflow-wrap: anywhere; word-break: break-word; }
+.md a { overflow-wrap: anywhere; }
+.md img { max-width: 100%; height: auto; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md h1, .md h2, .md h3, .md h4 { font-weight: 600; line-height: 1.3; margin: 1em 0 0.4em; }

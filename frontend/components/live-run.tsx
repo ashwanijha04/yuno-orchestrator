@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Approval, type RunDetail } from "@/lib/api";
 import { subscribeRun, type RunEvent } from "@/lib/ws";
 import { Markdown } from "@/components/markdown";
+import { AgentComms } from "@/components/agent-comms";
 
 const STATUS_COLOR: Record<string, string> = {
   running: "var(--color-status-running)",
@@ -140,7 +141,12 @@ export function LiveRun({ runId }: { runId: string }) {
           )}
           <a href={`/runs/${runId}`} className={`${running ? "" : "ml-auto "}shrink-0 text-xs text-[var(--color-muted-foreground)] hover:underline`}>open run →</a>
         </div>
-        {run?.task && <p className="mt-2 text-sm">{run.task}</p>}
+        {run?.task && (
+          <div className="mt-2">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">Task</p>
+            <p className="mt-0.5 break-words text-base font-medium leading-snug">{run.task}</p>
+          </div>
+        )}
         {agents.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted-foreground)]">
             <span>agents:</span>
@@ -203,9 +209,9 @@ export function LiveRun({ runId }: { runId: string }) {
         )}
         {steps.map((s, i) => (
           <div key={s.id} className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-            <div className="mb-2 flex items-center gap-3">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-muted)] text-xs font-mono">{i + 1}</span>
-              <span className="font-medium">{s.agent_name ?? s.node_id}</span>
+            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-muted)] text-xs font-mono">{i + 1}</span>
+              <span className="min-w-0 truncate font-medium">{s.agent_name ?? s.node_id}</span>
               <StatusPill status={s.status} />
               <span className="ml-auto flex items-center gap-3 font-mono text-xs text-[var(--color-muted-foreground)]">
                 {s.tokens_in + s.tokens_out > 0 && <span>{(s.tokens_in + s.tokens_out).toLocaleString()} tok</span>}
@@ -229,27 +235,16 @@ export function LiveRun({ runId }: { runId: string }) {
         ))}
       </div>
 
-      {/* delegated sub-tasks: each agent the coordinator messaged + its result */}
+      {/* inter-agent conversation: who messaged whom, and the replies */}
       {(run?.children?.length ?? 0) > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Delegated to agents</p>
-          {run!.children.map((c) => (
-            <div key={c.id} className="rounded-[var(--radius)] border border-[var(--color-status-running)]/40 bg-[var(--color-card)] p-4">
-              <div className="mb-1 flex items-center gap-2">
-                <span className="text-xs font-medium text-[var(--color-status-running)]">→ {c.agent_name ?? "agent"}</span>
-                <StatusPill status={c.status} />
-                <a href={`/runs/${c.id}`} className="ml-auto text-xs text-[var(--color-muted-foreground)] hover:underline">sub-run →</a>
-              </div>
-              {c.task && <p className="mb-2 text-xs italic text-[var(--color-muted-foreground)]">“{c.task}”</p>}
-              {c.output ? (
-                <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3">
-                  <Markdown>{c.output}</Markdown>
-                </div>
-              ) : ACTIVE(c.status) ? (
-                <Thinking />
-              ) : null}
-            </div>
-          ))}
+        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+          <p className="mb-3 flex items-center gap-2 text-sm font-medium">
+            💬 Agent conversation
+            <span className="text-xs font-normal text-[var(--color-muted-foreground)]">
+              {run!.children.length} exchange{run!.children.length > 1 ? "s" : ""}
+            </span>
+          </p>
+          <AgentComms run={run!} />
         </div>
       )}
 

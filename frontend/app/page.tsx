@@ -69,7 +69,7 @@ function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
         )}
         {turns.map((t, i) => (
           <div key={i} className={t.role === "user" ? "text-right" : ""}>
-            <div className={`inline-block max-w-[90%] rounded-[var(--radius)] px-3 py-2 text-left text-sm ${
+            <div className={`inline-block max-w-[90%] overflow-hidden break-words rounded-[var(--radius)] px-3 py-2 text-left text-sm ${
               t.role === "user" ? "bg-[var(--color-muted)]" : "border border-[var(--color-border)] bg-[var(--color-background)]"}`}>
               {t.role === "assistant" ? <Markdown>{t.content}</Markdown> : t.content}
             </div>
@@ -84,7 +84,7 @@ function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
           onKeyDown={(e) => { if (e.key === "Enter") send(); }}
           placeholder={jarvisId ? "Tell Jarvis what to do…" : "Seed agents to enable Jarvis (python -m scripts.seed)"}
           disabled={!jarvisId || busy}
-          className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)] disabled:opacity-50" />
+          className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)] disabled:opacity-50" />
         <button onClick={send} disabled={!jarvisId || busy || !input.trim()}
           className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-foreground)] disabled:opacity-50">
           Send
@@ -130,8 +130,8 @@ export default function Cockpit() {
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <div className="h-[420px]"><JarvisConsole jarvisId={jarvis} /></div>
-        <div className="hud-grid h-[420px] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
+        <div className="h-[420px] min-w-0"><JarvisConsole jarvisId={jarvis} /></div>
+        <div className="hud-grid h-[420px] min-w-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
           <AgentConstellation />
         </div>
       </div>

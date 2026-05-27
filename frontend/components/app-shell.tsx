@@ -33,14 +33,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center justify-between border-b border-[var(--color-border)] px-6">
           <span className="text-sm text-[var(--color-muted-foreground)]">
             Local · single-user
           </span>
           <HealthBadge />
         </header>
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );
