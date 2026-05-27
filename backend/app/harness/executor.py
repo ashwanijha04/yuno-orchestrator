@@ -1,10 +1,9 @@
 """HarnessExecutor — the one path every LLM call flows through.
 
-Six phases: (1) interceptor `before` (block/modify), (2) execute with retry on
-transient + validation failures, (3) validate, (4) normalize success, (5)
-interceptor `after`, (6) persistence/emit (an interceptor concern, wired later).
-No `if testing:` — behaviour is entirely a function of the providers, validators,
-and interceptors on the call.
+Lifecycle: interceptor `before` (block/modify) → for each provider candidate
+(model-routing fallback chain): retry loop + validation → on success, `after` and
+return; on fatal/exhausted, fall back to the next candidate. No `if testing:` —
+behaviour is a function of the providers, validators, and interceptors on the call.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ import time
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from app.harness.call import Attempt, HarnessedCall, LLMResponse
+from app.harness.call import Attempt, HarnessedCall, LLMResponse, ProviderCandidate
 from app.harness.providers.base import FatalError, RetryableError
 
 
@@ -24,7 +23,7 @@ class HarnessExecutor:
         self.backoff_base_s = backoff_base_s
 
     async def execute(self, call: HarnessedCall) -> LLMResponse:
-        # Phase 1 — pre-flight interceptors.
+        # Phase 1 — pre-flight interceptors (once, regardless of candidate).
         for icx in call.interceptors:
             decision = await icx.before(call)
             if decision.action == "block":
@@ -32,7 +31,31 @@ class HarnessExecutor:
             if decision.action == "modify" and decision.modified_request is not None:
                 call.request = decision.modified_request
 
-        # Phases 2–4 — execute with retry, validate, normalize.
+        candidates = call.candidates or [
+            ProviderCandidate(call.provider, call.request.model_name, call.cost_model)
+        ]
+
+        # Phase 2 — try each candidate in order (model-routing fallback chain).
+        last_exc: Exception | None = None
+        for candidate in candidates:
+            call.provider = candidate.provider
+            call.cost_model = candidate.cost_model
+            call.request.model_name = candidate.model_name
+            call.response = None
+            try:
+                await self._run_candidate(call)
+            except (FatalError, RetryableError) as exc:
+                last_exc = exc
+                continue  # fall back to the next provider
+            await self._run_after(call)
+            return call.response
+
+        await self._run_after(call)
+        raise last_exc or RetryableError("all provider candidates failed")
+
+    async def _run_candidate(self, call: HarnessedCall) -> None:
+        """Retry + validate against the active provider. Sets call.response/cost on
+        success; raises FatalError (immediately) or RetryableError (exhausted)."""
         last_exc: Exception | None = None
         for attempt_num in range(call.max_attempts):
             attempt = Attempt(num=attempt_num, started_at=datetime.now(UTC))
@@ -43,7 +66,6 @@ class HarnessExecutor:
                 attempt.error = str(exc)
                 attempt.latency_ms = int((time.monotonic() - t0) * 1000)
                 call.attempts.append(attempt)
-                await self._run_after(call)
                 raise
             except RetryableError as exc:
                 attempt.error = str(exc)
@@ -53,12 +75,11 @@ class HarnessExecutor:
                 if attempt_num < call.max_attempts - 1:
                     await self._backoff(attempt_num)
                     continue
-                break
+                raise
 
             attempt.latency_ms = int((time.monotonic() - t0) * 1000)
             attempt.raw_response = response.raw
 
-            # Phase 3 — validate.
             retry_failures = []
             for validator in call.validators:
                 result = validator.validate(response, call.request)
@@ -73,19 +94,12 @@ class HarnessExecutor:
                 call.attempts.append(attempt)
                 continue
 
-            # Phase 4 — success.
             call.attempts.append(attempt)
             call.response = response
             call.cost_usd = call.cost_model.cost(response.tokens_in, response.tokens_out)
-            break
+            return
 
-        if call.response is None:
-            await self._run_after(call)
-            raise last_exc or RetryableError("exhausted attempts without a response")
-
-        # Phase 5 — post-flight interceptors.
-        await self._run_after(call)
-        return call.response
+        raise last_exc or RetryableError("exhausted attempts without a response")
 
     async def _finish_blocked(self, call: HarnessedCall, reason: str) -> LLMResponse:
         call.blocked_reason = reason

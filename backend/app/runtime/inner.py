@@ -11,9 +11,11 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Awaitable, Callable
 
-from app.harness.call import BudgetTracker, LLMRequest, Message
+from app.harness.call import BudgetTracker, LLMRequest, Message, ProviderCandidate
 from app.harness.config import HarnessRuntime, build_harnessed_call
+from app.harness.cost import get_cost_model
 from app.harness.executor import HarnessExecutor
+from app.harness.routing import resolve as resolve_routes
 from app.runtime.persona import compose_system_prompt
 
 # A tool runtime: given (name, input, context) -> result dict. Wired in Phase 5.
@@ -53,7 +55,7 @@ def _render_input(inp: Any) -> str:
 async def run_agent_loop(
     *,
     executor: HarnessExecutor,
-    provider: Any,
+    provider: Any | None,
     agent: dict,
     harness_runtime: HarnessRuntime,
     agent_input: Any,
@@ -68,6 +70,17 @@ async def run_agent_loop(
     guardrails = agent.get("guardrails", {})
     max_iter = int(guardrails.get("max_iterations", 10))
     effective_system = compose_system_prompt(agent)
+
+    # Build the provider candidate chain once: an injected provider (tests) is a
+    # single candidate; otherwise the ModelRouter routes by task_type with fallback.
+    if provider is not None:
+        candidates = [ProviderCandidate(provider, agent["model_name"], get_cost_model(agent["model_name"]))]
+    else:
+        candidates = resolve_routes(
+            task_type=agent.get("task_type"),
+            explicit_provider=agent.get("model_provider"),
+            explicit_model=agent.get("model_name"),
+        )
 
     conversation: list[Message] = [
         Message(role=m["role"], content=m["content"]) for m in (prior_messages or [])
@@ -89,7 +102,7 @@ async def run_agent_loop(
         )
         call = build_harnessed_call(
             request=request,
-            provider=provider,
+            candidates=candidates,
             runtime=harness_runtime,
             budget=budget,
             run_id=run_id,

@@ -119,14 +119,26 @@ class BudgetTracker:
 
 
 @dataclass
+class ProviderCandidate:
+    """One (provider, model) the executor may try. Ordered candidates form the
+    model-routing fallback chain."""
+
+    provider: Any  # LLMProvider
+    model_name: str
+    cost_model: Any  # CostModel
+
+
+@dataclass
 class HarnessedCall:
     request: LLMRequest
-    provider: Any  # LLMProvider
-    cost_model: Any  # CostModel
+    provider: Any  # LLMProvider — the active candidate (set by the executor)
+    cost_model: Any  # CostModel — the active candidate's
     validators: list[Any] = field(default_factory=list)
     interceptors: list[Any] = field(default_factory=list)
     budget: BudgetTracker = field(default_factory=BudgetTracker)
     max_attempts: int = 3
+    # Ordered fallback chain; if empty the executor uses `provider`/`cost_model`.
+    candidates: list[ProviderCandidate] = field(default_factory=list)
 
     call_id: uuid.UUID = field(default_factory=uuid.uuid4)
     run_id: uuid.UUID | None = None

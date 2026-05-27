@@ -92,18 +92,20 @@ def resolve_runtime(agent_harness: dict | None = None, node_overrides: dict | No
 def build_harnessed_call(
     *,
     request: LLMRequest,
-    provider: Any,
+    candidates: list,
     runtime: HarnessRuntime,
     budget: BudgetTracker,
     run_id: uuid.UUID | None = None,
     agent_id: uuid.UUID | None = None,
 ) -> HarnessedCall:
-    """Single construction point for a HarnessedCall (factory). Centralizing it
-    keeps call assembly consistent as tool-aware calls arrive in Phase 5."""
+    """Single construction point for a HarnessedCall (factory). `candidates` is the
+    model-routing fallback chain (primary first)."""
+    primary = candidates[0]
     return HarnessedCall(
         request=request,
-        provider=provider,
-        cost_model=get_cost_model(request.model_name),
+        provider=primary.provider,
+        cost_model=primary.cost_model,
+        candidates=candidates,
         validators=runtime.validators,
         interceptors=runtime.interceptors,
         budget=budget,

@@ -29,6 +29,7 @@ export interface AgentFormValue {
   persona: { traits: string[]; tone: string; values: string[]; speaking_style: string };
   model_provider: string;
   model_name: string;
+  task_type: string;
   temperature: number;
   max_tokens: number;
   tool_ids: string[];
@@ -45,6 +46,7 @@ export function emptyAgent(): AgentFormValue {
     persona: { traits: [], tone: "", values: [], speaking_style: "" },
     model_provider: "anthropic",
     model_name: "claude-sonnet-4-6",
+    task_type: "auto",
     temperature: 0.7,
     max_tokens: 2048,
     tool_ids: [],
@@ -67,6 +69,7 @@ export function fromAgent(a: Agent): AgentFormValue {
     },
     model_provider: a.model_provider,
     model_name: a.model_name,
+    task_type: a.task_type ?? "auto",
     temperature: a.temperature,
     max_tokens: a.max_tokens,
     tool_ids: a.tool_ids ?? [],
@@ -180,6 +183,15 @@ export function AgentForm({
             <label className={LABEL}>Max tokens</label>
             <input type="number" className={FIELD} value={v.max_tokens}
               onChange={(e) => set({ max_tokens: parseInt(e.target.value || "0") })} />
+          </div>
+          <div className="col-span-2">
+            <label className={LABEL}>Routing (task type)</label>
+            <select className={FIELD} value={v.task_type} onChange={(e) => set({ task_type: e.target.value })}>
+              <option value="auto">auto — use the model above, fall back if it fails</option>
+              <option value="coding">coding — route to Anthropic (Sonnet), fallback OpenAI</option>
+              <option value="normal">normal — route to OpenAI, fallback Anthropic</option>
+              <option value="conversation">conversation — route to Gemini, fallback OpenAI/Anthropic</option>
+            </select>
           </div>
         </div>
       </Section>

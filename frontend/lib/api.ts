@@ -20,6 +20,7 @@ export interface Agent {
   persona: Persona;
   model_provider: string;
   model_name: string;
+  task_type: string;
   temperature: number;
   max_tokens: number;
   tool_ids: string[];

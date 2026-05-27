@@ -26,6 +26,7 @@ class AgentCreate(BaseModel):
     persona: dict[str, Any] = Field(default_factory=dict)
     model_provider: str = "anthropic"
     model_name: str = "claude-sonnet-4-6"
+    task_type: str = "auto"  # auto | coding | normal | conversation
     temperature: float = 0.7
     max_tokens: int = 2048
     tool_ids: list[str] = Field(default_factory=list)
@@ -41,6 +42,7 @@ class AgentUpdate(BaseModel):
     persona: dict[str, Any] | None = None
     model_provider: str | None = None
     model_name: str | None = None
+    task_type: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
     tool_ids: list[str] | None = None
@@ -58,6 +60,7 @@ class AgentOut(BaseModel):
     persona: dict[str, Any]
     model_provider: str
     model_name: str
+    task_type: str
     temperature: float
     max_tokens: int
     tool_ids: list[str]

@@ -38,16 +38,17 @@ TEST_DATABASE_URL = _test_database_url()
 
 
 async def _ensure_database() -> None:
-    """Create the test database if it doesn't exist (idempotent)."""
+    """Drop + recreate the test database so its schema always matches the models
+    (create_all with checkfirst won't add newly-introduced columns to an existing
+    table, causing schema drift across runs)."""
     import asyncpg
 
     url = make_url(TEST_DATABASE_URL)
     admin_dsn = f"postgresql://{url.username}:{url.password}@{url.host}:{url.port}/postgres"
     conn = await asyncpg.connect(admin_dsn)
     try:
+        await conn.execute(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)')
         await conn.execute(f'CREATE DATABASE "{url.database}"')
-    except asyncpg.DuplicateDatabaseError:
-        pass
     finally:
         await conn.close()
 

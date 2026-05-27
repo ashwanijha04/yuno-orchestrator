@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # --- LLM providers (no defaults; absence is handled by the harness) ---
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    gemini_api_key: str | None = None
     aws_region: str | None = None
 
     # --- Harness mode (see Subsystem B) ---

@@ -34,7 +34,7 @@ class RunEngine:
     def __init__(
         self,
         session_factory: async_sessionmaker,
-        provider: Any,
+        provider: Any = None,  # None -> ModelRouter picks per agent (live); tests inject a stub
         *,
         executor: HarnessExecutor | None = None,
         budget_cap_usd: Decimal | None = None,

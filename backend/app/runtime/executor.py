@@ -23,7 +23,6 @@ from app.config import settings
 from app.db.models import Channel
 from app.db.repositories import RunRepository
 from app.db.session import SessionFactory, engine
-from app.harness.config import get_provider
 from app.logging import configure_logging, get_logger
 from app.redis_client import close_redis, get_redis
 from app.runtime import queue
@@ -45,7 +44,8 @@ async def _process(run_id: str) -> None:
         run = await RunRepository(s).get(uuid.UUID(run_id))
         if run and run.trigger_payload and run.trigger_payload.get("max_cost_usd"):
             cap = Decimal(str(run.trigger_payload["max_cost_usd"]))
-    eng = RunEngine(session_factory=SessionFactory, provider=get_provider(), budget_cap_usd=cap)
+    # provider=None -> ModelRouter resolves per agent (task_type routing + fallback).
+    eng = RunEngine(session_factory=SessionFactory, budget_cap_usd=cap)
     status = await eng.run(uuid.UUID(run_id))
     log.info("worker.run.done", run_id=run_id, status=status)
 

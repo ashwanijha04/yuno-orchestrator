@@ -63,6 +63,10 @@ class Agent(Base):
     )
     model_provider: Mapped[str] = mapped_column(String, nullable=False)
     model_name: Mapped[str] = mapped_column(String, nullable=False)
+    # Routing hint: 'coding' | 'normal' | 'conversation' | 'auto'. With 'auto' the
+    # ModelRouter picks by task type; otherwise model_provider/model_name is the
+    # explicit primary and routing supplies fallbacks.
+    task_type: Mapped[str] = mapped_column(String, nullable=False, server_default=text("'auto'"))
     temperature: Mapped[float] = mapped_column(Numeric(3, 2), default=0.7)
     max_tokens: Mapped[int] = mapped_column(Integer, default=2048)
     tool_ids: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)

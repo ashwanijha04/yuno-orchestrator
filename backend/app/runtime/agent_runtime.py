@@ -24,6 +24,7 @@ class AgentRuntime:
     persona: dict[str, Any]
     model_provider: str
     model_name: str
+    task_type: str
     temperature: float
     max_tokens: int
     guardrails: dict[str, Any]
@@ -44,6 +45,7 @@ class AgentRuntime:
             persona=agent.persona or {},
             model_provider=agent.model_provider,
             model_name=agent.model_name,
+            task_type=agent.task_type or "auto",
             temperature=float(agent.temperature),
             max_tokens=agent.max_tokens,
             guardrails=agent.guardrails or {},
@@ -66,6 +68,7 @@ class AgentRuntime:
             "persona": self.persona,
             "model_provider": self.model_provider,
             "model_name": self.model_name,
+            "task_type": self.task_type,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "guardrails": self.guardrails,
