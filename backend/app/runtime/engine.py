@@ -17,34 +17,17 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Agent
 from app.db.repositories import RunRepository, WorkflowRepository
 from app.harness.call import BudgetTracker
-from app.harness.config import build_interceptors, build_validators, resolve_harness_config
+from app.harness.config import resolve_runtime
 from app.harness.executor import HarnessExecutor
 from app.logging import get_logger
 from app.observability.events import publish_event
+from app.runtime.agent_runtime import AgentRuntime
 from app.runtime.inner import ToolRuntime, run_agent_loop
 from app.runtime.outer import build_outer_graph, recursion_limit_for
 from app.runtime.state import GraphState, initial_state
 from sqlalchemy import select
 
 log = get_logger("engine")
-
-
-def _agent_to_dict(agent: Agent) -> dict[str, Any]:
-    return {
-        "id": agent.id,
-        "name": agent.name,
-        "role": agent.role,
-        "system_prompt": agent.system_prompt,
-        "soul_md": agent.soul_md,
-        "persona": agent.persona or {},
-        "model_provider": agent.model_provider,
-        "model_name": agent.model_name,
-        "temperature": float(agent.temperature),
-        "max_tokens": agent.max_tokens,
-        "guardrails": agent.guardrails or {},
-        "harness": agent.harness or {},
-        "tool_schemas": [],  # populated when tools land (Phase 5)
-    }
 
 
 class RunEngine:
@@ -172,13 +155,8 @@ class RunEngine:
 
     # ── helpers ────────────────────────────────────────────────────────────────
 
-    def _resolve_harness(self, agent: dict, node: dict) -> dict:
-        config = resolve_harness_config(agent.get("harness"), node.get("harness_overrides"))
-        return {
-            "max_attempts": config.get("max_attempts", 3),
-            "validators": build_validators(config),
-            "interceptors": build_interceptors(config),
-        }
+    def _resolve_harness(self, agent: dict, node: dict):
+        return resolve_runtime(agent.get("harness"), node.get("harness_overrides"))
 
     async def _load(self, run_id: uuid.UUID) -> tuple[dict, dict[str, dict]]:
         async with self.session_factory() as s:
@@ -193,7 +171,7 @@ class RunEngine:
             agents: dict[str, dict] = {}
             if agent_ids:
                 rows = (await s.execute(select(Agent).where(Agent.id.in_([uuid.UUID(a) for a in agent_ids])))).scalars().all()
-                agents = {str(a.id): _agent_to_dict(a) for a in rows}
+                agents = {str(a.id): AgentRuntime.from_model(a).as_dict() for a in rows}
             return graph, agents
 
     async def _get_run_variables(self, run_id: uuid.UUID) -> dict | None:

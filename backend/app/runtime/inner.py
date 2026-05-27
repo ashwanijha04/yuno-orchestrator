@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Awaitable, Callable
 
-from app.harness.call import BudgetTracker, HarnessedCall, LLMRequest, Message
-from app.harness.cost import get_cost_model
+from app.harness.call import BudgetTracker, LLMRequest, Message
+from app.harness.config import HarnessRuntime, build_harnessed_call
 from app.harness.executor import HarnessExecutor
 from app.runtime.persona import compose_system_prompt
 
@@ -55,16 +55,15 @@ async def run_agent_loop(
     executor: HarnessExecutor,
     provider: Any,
     agent: dict,
-    harness_runtime: dict,
+    harness_runtime: HarnessRuntime,
     agent_input: Any,
     budget: BudgetTracker,
     run_id: uuid.UUID,
     tool_runtime: ToolRuntime | None = None,
 ) -> InnerResult:
     """Run one agent to completion. `agent` is the agent config row (as dict);
-    `harness_runtime` carries resolved {max_attempts, validators[], interceptors[]}.
-    """
-    cost_model = get_cost_model(agent["model_name"])
+    `harness_runtime` is the resolved HarnessRuntime (max_attempts + validators +
+    interceptors)."""
     guardrails = agent.get("guardrails", {})
     max_iter = int(guardrails.get("max_iterations", 10))
     effective_system = compose_system_prompt(agent)
@@ -84,14 +83,11 @@ async def run_agent_loop(
             max_tokens=int(agent.get("max_tokens", 2048)),
             metadata={"agent_id": str(agent.get("id", "")), "run_id": str(run_id)},
         )
-        call = HarnessedCall(
+        call = build_harnessed_call(
             request=request,
             provider=provider,
-            cost_model=cost_model,
-            validators=harness_runtime.get("validators", []),
-            interceptors=harness_runtime.get("interceptors", []),
+            runtime=harness_runtime,
             budget=budget,
-            max_attempts=int(harness_runtime.get("max_attempts", 3)),
             run_id=run_id,
             agent_id=agent.get("id"),
         )

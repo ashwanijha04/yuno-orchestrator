@@ -218,6 +218,9 @@ Implemented through the extremis `ExternalMemoryStrategy`, closing the loop the 
 
 This elevates the platform from "multi-agent workflows" to "agents with a persistent soul that hand off coherently and get better with use" — the strongest interview narrative and directly on the extremis story.
 
+### Visibility surface (decision)
+The **web run timeline is the primary monitoring UI** and must make collaboration legible: per-agent rows, **inter-agent edges** ("→ handoff to Analyst"), tool-call annotations, and click-through to the structured `HandoffReport` — this is the "what did it do / who did it talk to" surface. **Slack is documented future work** (not built now): it's purely additive on the existing `Channel` protocol + Redis event stream — (a) a real `SlackChannel` adapter and (b) a "run-mirror" that posts each run as a thread with agents as bot identities and handoffs as Block Kit blocks. Telegram remains the live human↔agent channel for the demo.
+
 ---
 
 ## Data model
