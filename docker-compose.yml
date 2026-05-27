@@ -8,9 +8,9 @@ services:
       POSTGRES_PASSWORD: yuno
       POSTGRES_DB: yuno
     ports:
-      # Host 55432 to avoid clashing with other local Postgres instances;
-      # in-network services still connect on postgres:5432.
-      - "55432:5432"
+      # Host port auto-selected by scripts/dev-up.sh (free-port scan). In-network
+      # services always connect on postgres:5432 regardless of the host mapping.
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +22,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -36,7 +36,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://yuno:yuno@postgres:5432/yuno
       REDIS_URL: redis://redis:6379/0
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
     depends_on:
@@ -77,9 +77,10 @@ services:
   frontend:
     build: ./frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # Browser-facing; must match the backend's chosen host port (set by dev-up.sh).
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
     ports:
-      - "3001:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules

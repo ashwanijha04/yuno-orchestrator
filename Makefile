@@ -1,7 +1,7 @@
 .PHONY: up down logs build test fmt seed migrate backend-shell
 
-up:                ## Boot the full stack
-	docker compose up --build
+up:                ## Boot the full stack (auto-selects free host ports)
+	./scripts/dev-up.sh --build
 
 down:              ## Stop and remove containers
 	docker compose down
