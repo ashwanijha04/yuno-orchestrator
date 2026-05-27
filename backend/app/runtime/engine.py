@@ -44,6 +44,11 @@ class RunEngine:
         self.provider = provider
         self.executor = executor or HarnessExecutor()
         self.budget = BudgetTracker(cap_usd=budget_cap_usd)
+        # Default tool runtime so granted tools execute; tests can inject their own.
+        if tool_runtime is None:
+            from app.tools.runtime import ToolRuntime
+
+            tool_runtime = ToolRuntime(session_factory)
         self.tool_runtime = tool_runtime
 
     async def run(self, run_id: uuid.UUID) -> str:

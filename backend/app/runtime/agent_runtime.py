@@ -48,9 +48,9 @@ class AgentRuntime:
             guardrails=agent.guardrails or {},
             harness=agent.harness or {},
             tool_ids=tool_ids,
-            # Only advertise tool schemas once a tool runtime is wired (Phase 5);
-            # until then keep empty so the model doesn't call unexecutable tools.
-            tool_schemas=[],
+            # Advertise the granted tools' schemas to the LLM (executed by the
+            # ToolRuntime wired into the engine).
+            tool_schemas=schemas_for(tool_ids),
         )
 
     def as_dict(self) -> dict[str, Any]:

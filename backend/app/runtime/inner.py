@@ -115,7 +115,9 @@ async def run_agent_loop(
         if response.tool_calls and tool_runtime is not None:
             conversation.append(Message(role="assistant", content=response.content or "(tool call)"))
             for tc in response.tool_calls:
-                tool_out = await tool_runtime(tc.name, tc.input, {"run_id": str(run_id)})
+                tool_out = await tool_runtime(
+                    tc.name, tc.input, {"run_id": str(run_id), "agent_id": str(agent.get("id") or "")}
+                )
                 result.messages.append(
                     PersistedMessage(role="tool", content=str(tool_out), tool_name=tc.name)
                 )
