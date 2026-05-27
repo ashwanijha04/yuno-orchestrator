@@ -116,6 +116,23 @@ async def remember(
         log.warning("extremis.remember_failed", detail=str(exc))
 
 
+async def remember_lesson(agent_id, lesson: str) -> None:
+    """Encode a distilled lesson into the agent's PROCEDURAL memory (deduped),
+    so it surfaces on future tasks — the 'learn' step of the improve loop."""
+    if not _enabled() or not lesson or not lesson.strip():
+        return
+
+    def _write(mem):
+        from extremis.types import MemoryLayer
+
+        return mem.remember_now(lesson.strip(), layer=MemoryLayer.PROCEDURAL)
+
+    try:
+        await _call(str(agent_id), _write)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("extremis.lesson_failed", detail=str(exc))
+
+
 class ExternalMemoryStrategy:
     def __init__(self, max_messages: int = 20):
         self.max_messages = max_messages

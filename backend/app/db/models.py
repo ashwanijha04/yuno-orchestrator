@@ -423,3 +423,25 @@ class Approval(Base):
     state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # graph state snapshot
     created_at: Mapped[datetime] = _now_col()
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ── Per-run evaluation (judge score + human feedback) ────────────────────────
+
+
+class RunEvaluation(Base):
+    """A quality signal on a run: either an LLM-judge score or human 👍/👎.
+    Feeds the learn step (agents distil lessons into long-term memory)."""
+
+    __tablename__ = "run_evaluations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String, nullable=False)  # judge|human
+    overall: Mapped[float | None] = mapped_column(Numeric(4, 3), nullable=True)  # 0..1
+    scores: Mapped[dict] = mapped_column(JSONB, default=dict)
+    verdict: Mapped[str | None] = mapped_column(String, nullable=True)  # pass|fail
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
+    created_at: Mapped[datetime] = _now_col()

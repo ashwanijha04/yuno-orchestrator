@@ -174,6 +174,7 @@ class RunOut(BaseModel):
     workflow_name: str | None = None
     task: str | None = None
     agent_names: list[str] = Field(default_factory=list)
+    quality: Decimal | None = None  # latest evaluation's overall score (0..1)
 
     model_config = {"from_attributes": True}
 
@@ -222,7 +223,20 @@ class ChildRun(BaseModel):
     total_cost_usd: Decimal
 
 
+class EvaluationOut(BaseModel):
+    id: uuid.UUID
+    source: str  # judge|human
+    overall: Decimal | None = None
+    scores: dict = Field(default_factory=dict)
+    verdict: str | None = None
+    rationale: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class RunDetail(RunOut):
     steps: list[StepOut]
     messages: list[MessageOut]
     children: list[ChildRun] = Field(default_factory=list)
+    evaluations: list[EvaluationOut] = Field(default_factory=list)

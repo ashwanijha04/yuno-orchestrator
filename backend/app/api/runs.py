@@ -8,8 +8,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel
+
 from app.api.schemas import (
     ChildRun,
+    EvaluationOut,
     MessageOut,
     QuickRunRequest,
     RunDetail,
@@ -17,13 +20,52 @@ from app.api.schemas import (
     RunWorkflowRequest,
     StepOut,
 )
-from app.db.models import Agent, Workflow
+from app.db.models import Agent, RunEvaluation, Step, Workflow
 from app.db.repositories import AgentRepository, RunRepository, WorkflowRepository
 from app.db.session import get_session
 from app.runtime import queue
 from sqlalchemy import select
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+
+
+class FeedbackRequest(BaseModel):
+    positive: bool
+    note: str | None = None
+
+
+async def _run_output(session: AsyncSession, run_id: uuid.UUID) -> str | None:
+    msgs = await RunRepository(session).messages_for_run(run_id)
+    return next((m.content for m in reversed(msgs) if m.role == "assistant" and m.content.strip()), None)
+
+
+async def _external_memory_agents(session: AsyncSession, run_id: uuid.UUID) -> list[Agent]:
+    rows = (
+        await session.execute(select(Agent).join(Step, Step.agent_id == Agent.id).where(Step.run_id == run_id))
+    ).scalars().unique().all()
+    return [a for a in rows if (a.memory_policy or {}).get("strategy") == "external"]
+
+
+async def _learn_from_eval(
+    session: AsyncSession, run_id: uuid.UUID, task: str | None, output: str | None,
+    positive: bool, note: str | None,
+) -> None:
+    """Distil a lesson into each external-memory agent's long-term memory."""
+    agents = await _external_memory_agents(session, run_id)
+    if not agents:
+        return
+    from app.memory.external import remember_lesson
+
+    detail = (note or output or "").strip()[:400]
+    if positive:
+        lesson = f'For tasks like "{task}", a strong approach that scored well: {detail}'
+    else:
+        lesson = (
+            f'For tasks like "{task}", the result fell short. To improve next time: '
+            f'{detail or "be more accurate, relevant, and complete."}'
+        )
+    for a in agents:
+        await remember_lesson(a.id, lesson)
 
 
 def _task_of(run) -> str | None:
@@ -68,6 +110,50 @@ async def cancel_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_sess
     return run
 
 
+@router.post("/{run_id}/evaluate", response_model=EvaluationOut)
+async def evaluate_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+    """Score a finished run with the LLM judge, then feed the verdict to the
+    agents' long-term memory so they improve next time."""
+    from app.eval import judge_run
+
+    run = await RunRepository(session).get(run_id)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    task, output = _task_of(run), await _run_output(session, run_id)
+    result = await judge_run(task or "", output or "")
+    ev = RunEvaluation(
+        run_id=run_id, source="judge", overall=result["overall"], scores=result["scores"],
+        verdict=result["verdict"], rationale=result["rationale"], cost_usd=result["cost_usd"],
+    )
+    session.add(ev)
+    await session.commit()
+    if result["verdict"] is not None:
+        await _learn_from_eval(
+            session, run_id, task, output,
+            positive=(result["verdict"] == "pass"), note=result["rationale"],
+        )
+    return ev
+
+
+@router.post("/{run_id}/feedback", response_model=EvaluationOut)
+async def feedback(run_id: uuid.UUID, body: FeedbackRequest, session: AsyncSession = Depends(get_session)):
+    """Human 👍/👎 on a run. Outranks the judge and feeds the learn step."""
+    run = await RunRepository(session).get(run_id)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    ev = RunEvaluation(
+        run_id=run_id, source="human", overall=(1.0 if body.positive else 0.0),
+        scores={}, verdict=("pass" if body.positive else "fail"), rationale=body.note,
+    )
+    session.add(ev)
+    await session.commit()
+    await _learn_from_eval(
+        session, run_id, _task_of(run), await _run_output(session, run_id),
+        positive=body.positive, note=body.note,
+    )
+    return ev
+
+
 @router.get("", response_model=list[RunOut])
 async def list_runs(session: AsyncSession = Depends(get_session)):
     runs = await RunRepository(session).list()
@@ -76,11 +162,24 @@ async def list_runs(session: AsyncSession = Depends(get_session)):
     if wf_ids:
         rows = (await session.execute(select(Workflow.id, Workflow.name).where(Workflow.id.in_(wf_ids)))).all()
         names = {wid: name for wid, name in rows}
+    # Latest judge score per run, in one query (avoids N+1).
+    quality: dict = {}
+    if runs:
+        ev_rows = (
+            await session.execute(
+                select(RunEvaluation.run_id, RunEvaluation.overall, RunEvaluation.created_at)
+                .where(RunEvaluation.run_id.in_({r.id for r in runs}), RunEvaluation.source == "judge")
+                .order_by(RunEvaluation.created_at.desc())
+            )
+        ).all()
+        for rid, overall, _ in ev_rows:
+            quality.setdefault(rid, overall)  # first seen = most recent
     out = []
     for r in runs:
         item = RunOut.model_validate(r)
         item.workflow_name = names.get(r.workflow_id)
         item.task = _task_of(r)
+        item.quality = quality.get(r.id)
         out.append(item)
     return out
 
@@ -136,13 +235,23 @@ async def get_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session
             status=c.status, output=coutput, total_cost_usd=c.total_cost_usd,
         ))
 
+    # Evaluations (judge + human), newest first; quality = latest judge score.
+    evals = (
+        await session.execute(
+            select(RunEvaluation).where(RunEvaluation.run_id == run_id).order_by(RunEvaluation.created_at.desc())
+        )
+    ).scalars().all()
+    eval_outs = [EvaluationOut.model_validate(e) for e in evals]
+
     base = RunOut.model_validate(run)
     base.workflow_name = wf.name if wf else None
     base.task = _task_of(run)
     base.agent_names = [agent_names[a] for a in agent_ids if a in agent_names] + child_agent_names
+    base.quality = next((e.overall for e in evals if e.source == "judge"), None)
     return RunDetail(
         **base.model_dump(), steps=step_outs,
         messages=[MessageOut.model_validate(m) for m in messages], children=child_outs,
+        evaluations=eval_outs,
     )
 
 
