@@ -20,27 +20,49 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function Thinking({ label = "thinking" }: { label?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm text-[var(--color-status-running)]">
+      <span className="flex gap-1">
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--color-status-running)] [animation-delay:-0.3s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--color-status-running)] [animation-delay:-0.15s]" />
+        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--color-status-running)]" />
+      </span>
+      {label}…
+    </span>
+  );
+}
+
+const ACTIVE = (s: string) => s === "running" || s === "pending";
+
 export function LiveRun({ runId }: { runId: string }) {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [liveStatus, setLiveStatus] = useState("pending");
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    let alive = true;
     setRun(null); setLiveStatus("pending");
-    const load = () => api.getRun(runId).then((r) => { setRun(r); setLiveStatus(r.status); }).catch(() => {});
+    const apply = (r: RunDetail) => { if (alive) { setRun(r); setLiveStatus(r.status); } };
+    const load = () => api.getRun(runId).then(apply).catch(() => {});
     load();
-    // Coalesce refetches triggered by live events.
     const refetch = () => {
       if (refetchTimer.current) clearTimeout(refetchTimer.current);
       refetchTimer.current = setTimeout(load, 150);
     };
+    // WS = instant parent transitions; interval = live sub-task (child) progress,
+    // since delegated children change status inside the orchestrator's step.
     const unsub = subscribeRun(runId, (ev: RunEvent) => {
       if (ev.type === "step.started") setLiveStatus("running");
-      if (ev.type === "run.completed") setLiveStatus("completed");
-      if (ev.type === "run.failed") setLiveStatus("failed");
       if (["step.started", "step.completed", "run.completed", "run.failed"].includes(ev.type)) refetch();
     });
-    return () => { unsub(); if (refetchTimer.current) clearTimeout(refetchTimer.current); };
+    const poll = setInterval(async () => {
+      const r = await api.getRun(runId).catch(() => null);
+      if (!r) return;
+      apply(r);
+      if (r.status === "completed" || r.status === "failed") clearInterval(poll);
+    }, 1300);
+    return () => { alive = false; unsub(); clearInterval(poll); if (refetchTimer.current) clearTimeout(refetchTimer.current); };
   }, [runId]);
 
   const status = run?.status && run.status !== "pending" ? run.status : liveStatus;
@@ -91,9 +113,7 @@ export function LiveRun({ runId }: { runId: string }) {
               <StatusPill status={s.status} />
               <span className="ml-auto font-mono text-xs text-[var(--color-muted-foreground)]">{s.cost_usd !== "0" ? `$${s.cost_usd}` : ""}</span>
             </div>
-            {s.status === "running" && !s.output && (
-              <p className="text-sm text-[var(--color-muted-foreground)]">working…</p>
-            )}
+            {ACTIVE(s.status) && !s.output && <Thinking label="working" />}
             {s.output && (
               <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3">
                 <Markdown>{s.output}</Markdown>
@@ -116,11 +136,13 @@ export function LiveRun({ runId }: { runId: string }) {
                 <a href={`/runs/${c.id}`} className="ml-auto text-xs text-[var(--color-muted-foreground)] hover:underline">sub-run →</a>
               </div>
               {c.task && <p className="mb-2 text-xs italic text-[var(--color-muted-foreground)]">“{c.task}”</p>}
-              {c.output && (
+              {c.output ? (
                 <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] p-3">
                   <Markdown>{c.output}</Markdown>
                 </div>
-              )}
+              ) : ACTIVE(c.status) ? (
+                <Thinking />
+              ) : null}
             </div>
           ))}
         </div>
