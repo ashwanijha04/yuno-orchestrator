@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 from app.harness.call import BudgetTracker, HarnessedCall, LLMRequest, Message
 from app.harness.cost import get_cost_model
 from app.harness.executor import HarnessExecutor
+from app.runtime.persona import compose_system_prompt
 
 # A tool runtime: given (name, input, context) -> result dict. Wired in Phase 5.
 ToolRuntime = Callable[[str, dict, dict], Awaitable[dict]]
@@ -66,6 +67,7 @@ async def run_agent_loop(
     cost_model = get_cost_model(agent["model_name"])
     guardrails = agent.get("guardrails", {})
     max_iter = int(guardrails.get("max_iterations", 10))
+    effective_system = compose_system_prompt(agent)
 
     conversation: list[Message] = [Message(role="user", content=_render_input(agent_input))]
     result = InnerResult(content="")
@@ -75,7 +77,7 @@ async def run_agent_loop(
         request = LLMRequest(
             model_provider=agent["model_provider"],
             model_name=agent["model_name"],
-            system=agent["system_prompt"],
+            system=effective_system,
             messages=list(conversation),
             tools=agent.get("tool_schemas", []),
             temperature=float(agent.get("temperature", 0.7)),

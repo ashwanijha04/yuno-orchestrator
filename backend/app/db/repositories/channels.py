@@ -41,6 +41,12 @@ class ChannelRepository:
         await self.session.flush()
         return binding
 
+    async def bindings_for_channel(self, channel_id: uuid.UUID) -> Sequence[ChannelBinding]:
+        result = await self.session.execute(
+            select(ChannelBinding).where(ChannelBinding.channel_id == channel_id)
+        )
+        return result.scalars().all()
+
     async def resolve_binding(
         self, channel_id: uuid.UUID, external_id: str
     ) -> ChannelBinding | None:

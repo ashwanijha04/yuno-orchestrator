@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -52,6 +53,14 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    # Identity layer: a freeform SOUL.md (personality, voice, values, backstory)
+    # plus structured persona traits. Composed into the effective system prompt.
+    soul_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # {traits[], tone, values[], speaking_style}; server_default so the column
+    # can be added to a table that already has rows.
+    persona: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'"), default=dict
+    )
     model_provider: Mapped[str] = mapped_column(String, nullable=False)
     model_name: Mapped[str] = mapped_column(String, nullable=False)
     temperature: Mapped[float] = mapped_column(Numeric(3, 2), default=0.7)

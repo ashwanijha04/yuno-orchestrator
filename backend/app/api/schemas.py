@@ -11,10 +11,19 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class Persona(BaseModel):
+    traits: list[str] = Field(default_factory=list)
+    tone: str | None = None
+    values: list[str] = Field(default_factory=list)
+    speaking_style: str | None = None
+
+
 class AgentCreate(BaseModel):
     name: str
     role: str
     system_prompt: str
+    soul_md: str | None = None
+    persona: dict[str, Any] = Field(default_factory=dict)
     model_provider: str = "anthropic"
     model_name: str = "claude-sonnet-4-6"
     temperature: float = 0.7
@@ -28,6 +37,8 @@ class AgentCreate(BaseModel):
 class AgentUpdate(BaseModel):
     role: str | None = None
     system_prompt: str | None = None
+    soul_md: str | None = None
+    persona: dict[str, Any] | None = None
     model_provider: str | None = None
     model_name: str | None = None
     temperature: float | None = None
@@ -43,6 +54,8 @@ class AgentOut(BaseModel):
     name: str
     role: str
     system_prompt: str
+    soul_md: str | None
+    persona: dict[str, Any]
     model_provider: str
     model_name: str
     temperature: float
@@ -56,12 +69,64 @@ class AgentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class WorkflowOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str | None
+    current_version: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WorkflowDetail(WorkflowOut):
+    graph: dict[str, Any]
+
+
+class RunWorkflowRequest(BaseModel):
+    variables: dict[str, Any] = Field(default_factory=dict)
+    max_cost_usd: Decimal | None = None
+
+
 class QuickRunRequest(BaseModel):
     """Run a single agent as a synthetic one-node workflow (the simplest path
     to a live run while the visual builder is still being built)."""
 
     input: str
     max_cost_usd: Decimal | None = None
+
+
+class ChannelCreate(BaseModel):
+    type: str  # telegram | slack | whatsapp
+    name: str
+    config: dict[str, Any] = Field(default_factory=dict)  # {bot_token, webhook_secret}
+
+
+class ChannelOut(BaseModel):
+    id: uuid.UUID
+    type: str
+    name: str
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BindingCreate(BaseModel):
+    agent_id: uuid.UUID | None = None
+    workflow_id: uuid.UUID | None = None
+    external_id: str  # chat id / channel id
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class BindingOut(BaseModel):
+    id: uuid.UUID
+    agent_id: uuid.UUID | None
+    channel_id: uuid.UUID
+    workflow_id: uuid.UUID | None
+    external_id: str
+
+    model_config = {"from_attributes": True}
 
 
 class RunOut(BaseModel):

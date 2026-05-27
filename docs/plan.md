@@ -186,8 +186,42 @@ Run **`vercel:react-best-practices`** over `.tsx` after each component batch (st
 
 ---
 
+# Subsystem E — Structured handoffs & continuous learning
+
+The differentiator that makes agents **stay coherent over days, not just minutes** (per the gstack "Structured handoffs" model). Two coupled mechanisms:
+
+### Structured handoffs (not freeform text)
+When an agent finishes a step — and especially when it hands off to the next agent (workflow edge or `send_message_to_agent`) — it emits a **`HandoffReport`**, not just a blob of text:
+```
+HandoffReport = {
+  output: Any,                 # the actual artifact (lands at the node's output_key)
+  implemented: str,            # what was accomplished
+  outstanding: str,            # what was left undone / open questions
+  actions: [{tool, input, result, status}],  # commands/tools run + outcomes (from tool_invocations)
+  issues: [str],               # problems discovered
+  followed_procedures: bool,   # did it stay within guardrails/instructions
+}
+```
+- Persisted on the step (a `messages` row of role `agent` with the report as `tool_calls`/JSON) and **passed downstream** via `input_mapping`, so the next agent receives a structured briefing instead of "whatever the last one said."
+- Rendered in the run timeline (the handoff is the click-through detail on a step) — this is what makes the multi-agent collaboration legible.
+- Produced by a final "handoff" turn in the inner loop (a JSON-mode response validated by `JSONSchemaValidator`); falls back to `{output: <content>}` if the agent doesn't emit one.
+- **Lands in Phase 5** as the structured form of inter-agent messaging.
+
+### Continuous-learning loop (New Task → Execute → Observe → Learn → Encode Skill)
+Implemented through the extremis `ExternalMemoryStrategy`, closing the loop the brief's "openclaw SOUL.md/MEMORY" hints at:
+- **New Task / prepare:** `memory_recall` — pull relevant episodic + procedural memories for this agent (its soul is the identity key) into the prompt.
+- **Execute:** the run.
+- **Observe:** capture the outcome (success/failure, cost, the HandoffReport, any guardrail trips).
+- **Learn:** `memory_report_outcome` — record whether the approach worked, keyed to the agent's identity.
+- **Encode Skill:** periodically `memory_consolidate` distils repeated tool-sequences into **procedural memory** ("how I did X") so future runs recall a learned skill, not just facts.
+- **Lands in Phase 5** (memory subsystem); degrades gracefully when extremis is offline (skips recall/learn, runs stateless).
+
+This elevates the platform from "multi-agent workflows" to "agents with a persistent soul that hand off coherently and get better with use" — the strongest interview narrative and directly on the extremis story.
+
+---
+
 ## Data model
-Base tables per `docs/architecture.md §4`: `agents, workflows, workflow_versions, channels, channel_bindings, runs, steps, messages, tool_invocations, schedules, outbound_messages` (costs denormalized message→step→run).
+Base tables per `docs/architecture.md §4`: `agents, workflows, workflow_versions, channels, channel_bindings, runs, steps, messages, tool_invocations, schedules, outbound_messages` (costs denormalized message→step→run). Agents also carry `soul_md` + `persona` (identity layer, composed into the effective system prompt).
 
 **Schema reconciliation vs `architecture.md §4` (must land in the Phase 1 migration — code reads these):**
 - `channel_bindings.workflow_id UUID NULL` — webhook routing ("binding → workflow") needs it; arch DDL only had `agent_id`.

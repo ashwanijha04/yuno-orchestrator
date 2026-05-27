@@ -33,9 +33,12 @@ def _agent_to_dict(agent: Agent) -> dict[str, Any]:
     return {
         "id": agent.id,
         "name": agent.name,
+        "role": agent.role,
+        "system_prompt": agent.system_prompt,
+        "soul_md": agent.soul_md,
+        "persona": agent.persona or {},
         "model_provider": agent.model_provider,
         "model_name": agent.model_name,
-        "system_prompt": agent.system_prompt,
         "temperature": float(agent.temperature),
         "max_tokens": agent.max_tokens,
         "guardrails": agent.guardrails or {},

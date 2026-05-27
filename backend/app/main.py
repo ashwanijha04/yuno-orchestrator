@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agents, health, runs, ws
+from app.api import agents, channels, health, runs, tools, workflows, ws
 from app.config import settings
 from app.logging import configure_logging, get_logger
 from app.redis_client import close_redis, get_redis
@@ -40,17 +40,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# In dev the frontend host port is auto-selected, so allow any localhost origin
+# (regex) rather than a fixed list; prod pins explicit origins.
+_cors_kwargs = (
+    {"allow_origin_regex": r"http://(localhost|127\.0\.0\.1)(:\d+)?"}
+    if settings.app_env == "dev"
+    else {"allow_origins": settings.cors_origins}
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    **_cors_kwargs,
 )
 
 app.include_router(health.router)
 app.include_router(agents.router)
 app.include_router(runs.router)
+app.include_router(channels.router)
+app.include_router(tools.router)
+app.include_router(workflows.router)
 app.include_router(ws.router)
 
 

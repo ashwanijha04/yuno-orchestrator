@@ -4,11 +4,20 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export interface Persona {
+  traits?: string[];
+  tone?: string;
+  values?: string[];
+  speaking_style?: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
   role: string;
   system_prompt: string;
+  soul_md: string | null;
+  persona: Persona;
   model_provider: string;
   model_name: string;
   temperature: number;
@@ -64,6 +73,37 @@ export interface RunDetail extends Run {
   messages: Message[];
 }
 
+export interface Tool {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  requires_approval: boolean;
+}
+
+export interface Channel {
+  id: string;
+  type: string;
+  name: string;
+  status: string;
+  created_at: string;
+}
+
+export interface Binding {
+  id: string;
+  agent_id: string | null;
+  channel_id: string;
+  workflow_id: string | null;
+  external_id: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string | null;
+  current_version: number;
+  created_at: string;
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -79,6 +119,8 @@ export const api = {
   getAgent: (id: string) => req<Agent>(`/agents/${id}`),
   createAgent: (body: Partial<Agent>) =>
     req<Agent>("/agents", { method: "POST", body: JSON.stringify(body) }),
+  updateAgent: (id: string, body: Partial<Agent>) =>
+    req<Agent>(`/agents/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAgent: (id: string) =>
     req<void>(`/agents/${id}`, { method: "DELETE" }),
   quickRun: (agentId: string, input: string, maxCostUsd?: string) =>
@@ -88,4 +130,22 @@ export const api = {
     }),
   listRuns: () => req<Run[]>("/runs"),
   getRun: (id: string) => req<RunDetail>(`/runs/${id}`),
+
+  listTools: () => req<Tool[]>("/tools"),
+
+  listWorkflows: () => req<Workflow[]>("/workflows"),
+  runWorkflow: (id: string, variables: Record<string, unknown>, maxCostUsd?: string) =>
+    req<Run>(`/runs/workflow/${id}`, {
+      method: "POST",
+      body: JSON.stringify({ variables, max_cost_usd: maxCostUsd ?? null }),
+    }),
+
+  listChannels: () => req<Channel[]>("/channels"),
+  createChannel: (body: { type: string; name: string; config?: Record<string, unknown> }) =>
+    req<Channel>("/channels", { method: "POST", body: JSON.stringify(body) }),
+  listBindings: (channelId: string) => req<Binding[]>(`/channels/${channelId}/bindings`),
+  createBinding: (
+    channelId: string,
+    body: { agent_id?: string; workflow_id?: string; external_id: string },
+  ) => req<Binding>(`/channels/${channelId}/bindings`, { method: "POST", body: JSON.stringify(body) }),
 };

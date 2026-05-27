@@ -8,7 +8,14 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import MessageOut, QuickRunRequest, RunDetail, RunOut, StepOut
+from app.api.schemas import (
+    MessageOut,
+    QuickRunRequest,
+    RunDetail,
+    RunOut,
+    RunWorkflowRequest,
+    StepOut,
+)
 from app.db.repositories import AgentRepository, RunRepository, WorkflowRepository
 from app.db.session import get_session
 from app.runtime import queue
@@ -34,6 +41,32 @@ async def get_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session
         steps=[StepOut.model_validate(s) for s in steps],
         messages=[MessageOut.model_validate(m) for m in messages],
     )
+
+
+@router.post("/workflow/{workflow_id}", response_model=RunOut, status_code=201)
+async def run_workflow(
+    workflow_id: uuid.UUID, body: RunWorkflowRequest, session: AsyncSession = Depends(get_session)
+):
+    """Trigger a (multi-agent) workflow at its current version and enqueue it."""
+    wf = await WorkflowRepository(session).get(workflow_id)
+    if wf is None:
+        raise HTTPException(404, "workflow not found")
+
+    trigger_payload: dict = dict(body.variables)
+    if body.max_cost_usd is not None:
+        trigger_payload["max_cost_usd"] = str(body.max_cost_usd)
+
+    run = await RunRepository(session).create(
+        workflow_id=workflow_id,
+        workflow_version=wf.current_version,
+        trigger_type="manual",
+        trigger_payload=trigger_payload,
+        initial_state={"variables": body.variables},
+    )
+    await session.commit()
+    await queue.ensure_group()
+    await queue.enqueue_run(run.id)
+    return run
 
 
 @router.post("/agent/{agent_id}", response_model=RunOut, status_code=201)
