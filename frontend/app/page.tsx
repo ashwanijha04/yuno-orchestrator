@@ -119,13 +119,13 @@ export default function Cockpit() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:h-[600px] lg:grid-cols-2">
-        <div className="h-[460px] min-w-0 lg:h-full"><JarvisConsole jarvisId={jarvis} /></div>
-        <div className="flex min-w-0 flex-col gap-4 lg:h-full">
-          <div className="hud-grid h-[300px] shrink-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <div className="h-[480px] min-w-0"><JarvisConsole jarvisId={jarvis} /></div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="hud-grid h-[220px] shrink-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
             <AgentConstellation />
           </div>
-          <div className="min-h-0 flex-1"><MissionQueue /></div>
+          <div className="h-[244px]"><MissionQueue /></div>
         </div>
       </div>
 
