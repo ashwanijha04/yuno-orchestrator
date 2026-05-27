@@ -112,9 +112,18 @@ async def test_req_agent_configuration_dimensions(client):
     assert a["tool_ids"] == ["python_exec"]
 
 
-@pytest.mark.skip(reason="Schedules API lands in Phase 7 (APScheduler); the schedules table exists in the data model.")
-async def test_req_agent_schedules():
-    ...
+async def test_req_agent_schedules(client):
+    """Schedules dimension: cron-triggered workflow runs (fired by the worker's
+    scheduler loop)."""
+    agent = (await client.post("/agents", json={"name": "Sched", "role": "r", "system_prompt": "s"})).json()
+    wf = (await client.post("/workflows", json={
+        "name": "ScheduledWF",
+        "graph": {"entry_node": "a", "variables": {}, "nodes": [{"id": "a", "type": "agent", "agent_id": agent["id"], "output_key": "o"}], "edges": []},
+    })).json()
+    created = await client.post("/schedules", json={"workflow_id": wf["id"], "cron_expression": "*/5 * * * *", "payload": {"topic": "daily"}})
+    assert created.status_code == 201 and created.json()["next_run_at"] is not None
+    assert (await client.post("/schedules", json={"workflow_id": wf["id"], "cron_expression": "not a cron"})).status_code == 422
+    assert len((await client.get("/schedules")).json()) >= 1
 
 
 # ── Visual workflow builder: conditions and feedback loops ───────────────────

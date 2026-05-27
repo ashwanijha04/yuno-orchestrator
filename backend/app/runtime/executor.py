@@ -71,6 +71,33 @@ async def _outbox_loop(stop: asyncio.Event) -> None:
         await asyncio.sleep(2.0)
 
 
+async def _scheduler_loop(stop: asyncio.Event) -> None:
+    """Fire due cron schedules: enqueue a run, advance next_run_at."""
+    from app.db.repositories import RunRepository, ScheduleRepository, WorkflowRepository
+
+    while not stop.is_set():
+        try:
+            async with SessionFactory() as s:
+                sched_repo = ScheduleRepository(s)
+                due = await sched_repo.due()
+                for sched in due:
+                    wf = await WorkflowRepository(s).get(sched.workflow_id)
+                    if wf is None:
+                        continue
+                    run = await RunRepository(s).create(
+                        workflow_id=sched.workflow_id, workflow_version=wf.current_version,
+                        trigger_type="schedule", trigger_payload=sched.payload or {},
+                        initial_state={"variables": sched.payload or {}},
+                    )
+                    await sched_repo.mark_fired(sched)
+                    await s.commit()
+                    await queue.enqueue_run(run.id)
+                    log.info("scheduler.fired", schedule_id=str(sched.id), run_id=str(run.id))
+        except Exception:  # noqa: BLE001
+            log.exception("worker.scheduler_error")
+        await asyncio.sleep(15.0)
+
+
 async def _telegram_poll_loop(stop: asyncio.Event) -> None:
     if settings.telegram_transport != "polling":
         return
@@ -113,6 +140,7 @@ async def main() -> None:
     tasks = [
         asyncio.create_task(_consume_loop(stop)),
         asyncio.create_task(_outbox_loop(stop)),
+        asyncio.create_task(_scheduler_loop(stop)),
         asyncio.create_task(_telegram_poll_loop(stop)),
     ]
     await stop.wait()

@@ -16,6 +16,7 @@ dependencies = [
     "openai>=1.59",
     "redis>=5.2",
     "apscheduler>=3.11",
+    "croniter>=3.0",
     "lark>=1.2",
     "structlog>=24.4",
     "httpx>=0.28",
