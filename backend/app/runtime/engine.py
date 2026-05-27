@@ -76,6 +76,7 @@ class RunEngine:
                 config={"recursion_limit": recursion_limit_for(graph)},
             )
             await self._finalize(run_id, "completed", final_state=_serializable(final))
+            await self._maybe_auto_reply(run_id, final)
             await publish_event(run_id, "run.completed", {})
             return "completed"
         except Exception as exc:  # noqa: BLE001 — surface failure on the run row
@@ -223,6 +224,29 @@ class RunEngine:
         async with self.session_factory() as s:
             await RunRepository(s).set_status(run_id, status, error=error, final_state=final_state)
             await s.commit()
+
+    async def _maybe_auto_reply(self, run_id: uuid.UUID, final: GraphState) -> None:
+        """For channel-triggered runs, queue the final output back to the chat
+        via the outbox so the conversation feels natural."""
+        from app.db.models import OutboundMessage
+
+        async with self.session_factory() as s:
+            run = await RunRepository(s).get(run_id)
+            if not run or run.trigger_type != "channel" or not run.trigger_payload:
+                return
+            channel_id = run.trigger_payload.get("channel_id")
+            external_id = run.trigger_payload.get("external_id")
+            artifacts = final.get("artifacts", {}) if final else {}
+            reply = list(artifacts.values())[-1] if artifacts else None
+            if not reply:
+                msgs = await RunRepository(s).messages_for_run(run_id)
+                reply = msgs[-1].content if msgs else None
+            if channel_id and external_id and reply:
+                s.add(OutboundMessage(
+                    channel_id=uuid.UUID(channel_id), external_id=external_id,
+                    content=str(reply), status="pending",
+                ))
+                await s.commit()
 
 
 def _resolve_input(input_mapping: dict | None, state: GraphState, agent: dict) -> Any:

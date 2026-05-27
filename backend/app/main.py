@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agents, channels, health, runs, tools, workflows, ws
+from app.api import agents, channels, health, runs, tools, webhooks, workflows, ws
 from app.config import settings
 from app.logging import configure_logging, get_logger
 from app.redis_client import close_redis, get_redis
@@ -61,6 +61,7 @@ app.include_router(runs.router)
 app.include_router(channels.router)
 app.include_router(tools.router)
 app.include_router(workflows.router)
+app.include_router(webhooks.router)
 app.include_router(ws.router)
 
 
