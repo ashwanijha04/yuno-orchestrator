@@ -36,6 +36,20 @@ def _task_of(run) -> str | None:
     return None
 
 
+@router.post("/clear")
+async def clear_finished(session: AsyncSession = Depends(get_session)):
+    deleted = await RunRepository(session).delete_finished()
+    await session.commit()
+    return {"deleted": deleted}
+
+
+@router.delete("/{run_id}", status_code=204)
+async def delete_run(run_id: uuid.UUID, session: AsyncSession = Depends(get_session)):
+    if not await RunRepository(session).delete(run_id):
+        raise HTTPException(404, "run not found")
+    await session.commit()
+
+
 @router.get("", response_model=list[RunOut])
 async def list_runs(session: AsyncSession = Depends(get_session)):
     runs = await RunRepository(session).list()

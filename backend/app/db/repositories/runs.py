@@ -119,6 +119,24 @@ class RunRepository:
         )
         return result.scalars().all()
 
+    async def delete(self, run_id: uuid.UUID) -> bool:
+        run = await self.get(run_id)
+        if run is None:
+            return False
+        await self.session.delete(run)
+        await self.session.flush()
+        return True
+
+    async def delete_finished(self) -> int:
+        """Delete completed/failed runs (cascades steps/messages). Returns count."""
+        from sqlalchemy import delete as sa_delete
+
+        result = await self.session.execute(
+            sa_delete(Run).where(Run.status.in_(("completed", "failed", "cancelled")))
+        )
+        await self.session.flush()
+        return result.rowcount or 0
+
     async def children_of(self, run_id: uuid.UUID) -> Sequence[Run]:
         """Runs spawned by this run via send_message_to_agent (delegated sub-tasks)."""
         result = await self.session.execute(

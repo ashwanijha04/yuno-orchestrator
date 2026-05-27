@@ -19,6 +19,22 @@ function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return <p className="text-sm text-[var(--color-muted-foreground)]">Not enough data yet.</p>;
+  const W = 600, H = 56, max = Math.max(...values, 0.000001);
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - (v / max) * (H - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-14 w-full">
+      <polyline fill="none" stroke="var(--color-primary)" strokeWidth="2" points={pts.join(" ")} />
+      <polygon fill="var(--color-primary)" opacity="0.12" points={`0,${H} ${pts.join(" ")} ${W},${H}`} />
+    </svg>
+  );
+}
+
 function Stat({ label, value, href, accent }: { label: string; value: string | number; href?: string; accent?: string }) {
   const inner = (
     <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-5 transition-colors hover:border-[var(--color-primary)]">
@@ -36,7 +52,7 @@ export default function Dashboard() {
   useEffect(() => {
     const load = () => {
       api.stats().then(setS).catch(() => {});
-      api.listRuns().then((r) => setRuns(r.slice(0, 6))).catch(() => {});
+      api.listRuns().then(setRuns).catch(() => {});
     };
     load();
     const t = setInterval(load, 3000);
@@ -69,13 +85,22 @@ export default function Dashboard() {
       </div>
 
       <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+        <p className="mb-1 font-medium">Cumulative spend</p>
+        <p className="mb-2 text-xs text-[var(--color-muted-foreground)]">across the last {runs.length} tasks</p>
+        <Sparkline values={(() => {
+          let c = 0;
+          return [...runs].reverse().map((r) => (c += parseFloat(r.total_cost_usd || "0")));
+        })()} />
+      </div>
+
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
         <div className="mb-3 flex items-center justify-between">
           <p className="font-medium">Recent tasks</p>
           <Link href="/runs" className="text-xs text-[var(--color-muted-foreground)] hover:underline">View all →</Link>
         </div>
         {runs.length === 0 && <p className="text-sm text-[var(--color-muted-foreground)]">No tasks yet — orchestrate one.</p>}
         <div className="space-y-1">
-          {runs.map((r) => (
+          {runs.slice(0, 6).map((r) => (
             <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center gap-3 rounded-md p-2 hover:bg-[var(--color-muted)]">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[r.status] ?? "var(--color-muted)" }} />
               <span className="min-w-0 flex-1 truncate text-sm">{r.task || r.workflow_name || "Run"}</span>

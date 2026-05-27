@@ -200,6 +200,8 @@ export const api = {
   stats: () => req<Stats>("/stats"),
   listRuns: () => req<Run[]>("/runs"),
   getRun: (id: string) => req<RunDetail>(`/runs/${id}`),
+  deleteRun: (id: string) => req<void>(`/runs/${id}`, { method: "DELETE" }),
+  clearFinishedRuns: () => req<{ deleted: number }>("/runs/clear", { method: "POST" }),
   orchestrate: (task: string, agentIds: string[], mode: "pipeline" | "auto") =>
     req<Run>("/orchestrate", {
       method: "POST",
