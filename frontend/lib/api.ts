@@ -104,6 +104,44 @@ export interface Workflow {
   created_at: string;
 }
 
+export interface WorkflowGraph {
+  version?: string;
+  name?: string;
+  entry_node: string;
+  variables: Record<string, unknown>;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface GraphNode {
+  id: string;
+  type: string; // agent | condition | channel_out
+  agent_id?: string;
+  output_key?: string;
+  input_mapping?: Record<string, string>;
+  position?: { x: number; y: number };
+  label?: string;
+}
+
+export interface GraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  condition?: string;
+  priority?: number;
+}
+
+export interface WorkflowDetail extends Workflow {
+  graph: WorkflowGraph;
+}
+
+export interface ValidationIssue {
+  code: string;
+  message: string;
+  node_id: string | null;
+  edge_id: string | null;
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -134,6 +172,16 @@ export const api = {
   listTools: () => req<Tool[]>("/tools"),
 
   listWorkflows: () => req<Workflow[]>("/workflows"),
+  getWorkflow: (id: string) => req<WorkflowDetail>(`/workflows/${id}`),
+  createWorkflow: (body: { name: string; description?: string; graph: WorkflowGraph }) =>
+    req<WorkflowDetail>("/workflows", { method: "POST", body: JSON.stringify(body) }),
+  saveWorkflowVersion: (id: string, graph: WorkflowGraph) =>
+    req<WorkflowDetail>(`/workflows/${id}/versions`, { method: "POST", body: JSON.stringify({ graph }) }),
+  validateWorkflow: (graph: WorkflowGraph) =>
+    req<{ valid: boolean; issues: ValidationIssue[] }>("/workflows/validate", {
+      method: "POST",
+      body: JSON.stringify({ graph }),
+    }),
   runWorkflow: (id: string, variables: Record<string, unknown>, maxCostUsd?: string) =>
     req<Run>(`/runs/workflow/${id}`, {
       method: "POST",

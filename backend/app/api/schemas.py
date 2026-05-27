@@ -88,6 +88,32 @@ class RunWorkflowRequest(BaseModel):
     max_cost_usd: Decimal | None = None
 
 
+class WorkflowCreate(BaseModel):
+    name: str
+    description: str | None = None
+    graph: dict[str, Any]
+
+
+class WorkflowSaveVersion(BaseModel):
+    graph: dict[str, Any]
+
+
+class ValidateRequest(BaseModel):
+    graph: dict[str, Any]
+
+
+class ValidationIssueOut(BaseModel):
+    code: str
+    message: str
+    node_id: str | None = None
+    edge_id: str | None = None
+
+
+class ValidateResponse(BaseModel):
+    valid: bool
+    issues: list[ValidationIssueOut]
+
+
 class QuickRunRequest(BaseModel):
     """Run a single agent as a synthetic one-node workflow (the simplest path
     to a live run while the visual builder is still being built)."""

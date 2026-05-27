@@ -150,9 +150,35 @@ async def test_req_workflow_conditions_and_feedback_loop(client):
     assert steps == ["drafter", "critic", "drafter", "critic"]
 
 
-@pytest.mark.skip(reason="Visual builder UI (React Flow canvas) is Phase 8; graph schema + validation + execution are tested in test_validation/test_runtime.")
-async def test_req_visual_builder_ui():
-    ...
+async def test_req_workflow_builder_create_and_validate(client):
+    """Backend behind the visual builder: validate-then-persist on create, and a
+    standalone validate endpoint the canvas calls live. (React Flow UI is verified
+    manually; routes /workflows/new and /workflows/[id]/edit serve the builder.)"""
+    agent = (await client.post("/agents", json={"name": "BuilderAgent", "role": "r", "system_prompt": "s"})).json()
+    aid = agent["id"]
+
+    # A broken graph is rejected on save (dangling edge target).
+    bad = await client.post("/workflows", json={
+        "name": "bad-wf",
+        "graph": {"entry_node": "a", "variables": {}, "nodes": [{"id": "a", "type": "agent", "agent_id": aid}],
+                  "edges": [{"id": "e", "from": "a", "to": "ghost"}]},
+    })
+    assert bad.status_code == 422
+
+    # The validate endpoint flags a bad condition for live builder feedback.
+    res = (await client.post("/workflows/validate", json={
+        "graph": {"entry_node": "a", "variables": {}, "nodes": [{"id": "a", "type": "agent", "agent_id": aid}, {"id": "b", "type": "channel_out"}],
+                  "edges": [{"id": "e", "from": "a", "to": "b", "condition": "this is not valid ==="}]},
+    })).json()
+    assert res["valid"] is False and any(i["code"] == "bad_condition" for i in res["issues"])
+
+    # A valid graph created via the builder API persists at v1.
+    good = await client.post("/workflows", json={
+        "name": "GoodBuiltWorkflow",
+        "graph": {"version": "1.0", "name": "GoodBuiltWorkflow", "entry_node": "a", "variables": {"topic": {"type": "string"}},
+                  "nodes": [{"id": "a", "type": "agent", "agent_id": aid, "output_key": "out"}], "edges": []},
+    })
+    assert good.status_code == 201 and good.json()["current_version"] == 1
 
 
 # ── At least 2 pre-built workflow templates ──────────────────────────────────

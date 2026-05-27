@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, type Workflow } from "@/lib/api";
 
@@ -20,9 +21,14 @@ export default function WorkflowsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Workflows</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Workflows</h1>
+        <Link href="/workflows/new" className="rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-sm text-[var(--color-primary-foreground)]">
+          New workflow
+        </Link>
+      </div>
       <p className="text-sm text-[var(--color-muted-foreground)]">
-        Multi-agent graphs. Run one and watch the agents hand off on the timeline.
+        Multi-agent graphs. Build one in the visual editor, run it, and watch the agents hand off on the timeline.
       </p>
       {error && <div className="rounded-md border border-[var(--color-status-failed)] p-3 text-sm text-[var(--color-status-failed)]">{error}</div>}
 
@@ -38,6 +44,7 @@ export default function WorkflowsPage() {
             </div>
             <div className="flex items-center gap-3">
               <span className="font-mono text-xs text-[var(--color-muted-foreground)]">v{wf.current_version}</span>
+              <Link href={`/workflows/${wf.id}/edit`} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">Edit</Link>
               <button onClick={() => run(wf)} className="rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-sm text-[var(--color-primary-foreground)]">Run</button>
             </div>
           </div>
