@@ -34,6 +34,15 @@ class RunCancelled(Exception):
     """Raised when a user cancels a run mid-flight (cooperative check)."""
 
 
+class RunPaused(Exception):
+    """Raised by a `human` node to halt the run pending approval."""
+
+    def __init__(self, node_id: str, summary: str):
+        self.node_id = node_id
+        self.summary = summary
+        super().__init__(f"paused at {node_id}")
+
+
 class RunEngine:
     def __init__(
         self,
@@ -67,21 +76,33 @@ class RunEngine:
             ]
             if caps:
                 self.budget.cap_usd = min(caps)
-        node_runner = self._make_node_runner(run_id, agents)
-        compiled = build_outer_graph(graph, node_runner)
+        # Resume after a human approval re-enters at the paused node with the
+        # saved state; a fresh run starts at the workflow's entry node.
+        resume = await self._pending_resume(run_id)
+        approved_node = resume["node_id"] if resume else None
+        node_runner = self._make_node_runner(run_id, agents, approved_node=approved_node)
+        compiled = build_outer_graph(graph, node_runner, entry_override=approved_node)
 
         try:
             await self._mark_running(run_id)
-            await publish_event(run_id, "run.started", {})
-            variables = (await self._get_run_variables(run_id)) or {}
+            await publish_event(run_id, "run.started", {"resumed": bool(resume)})
+            if resume:
+                start_state = _restore_state(resume["state"], str(run_id))
+            else:
+                variables = (await self._get_run_variables(run_id)) or {}
+                start_state = initial_state(str(run_id), variables)
             final = await compiled.ainvoke(
-                initial_state(str(run_id), variables),
-                config={"recursion_limit": recursion_limit_for(graph)},
+                start_state, config={"recursion_limit": recursion_limit_for(graph)}
             )
             await self._finalize(run_id, "completed", final_state=_serializable(final))
             await self._maybe_auto_reply(run_id, final)
             await publish_event(run_id, "run.completed", {})
             return "completed"
+        except RunPaused as paused:
+            log.info("run.paused", run_id=str(run_id), node=paused.node_id)
+            await self._finalize(run_id, "paused")
+            await publish_event(run_id, "run.paused", {"node_id": paused.node_id, "summary": paused.summary})
+            return "paused"
         except RunCancelled:
             log.info("run.cancelled", run_id=str(run_id))
             await self._finalize(run_id, "cancelled", error="Cancelled by user")
@@ -95,7 +116,7 @@ class RunEngine:
 
     # ── node execution ───────────────────────────────────────────────────────
 
-    def _make_node_runner(self, run_id: uuid.UUID, agents: dict[str, dict]):
+    def _make_node_runner(self, run_id: uuid.UUID, agents: dict[str, dict], approved_node: str | None = None):
         async def node_runner(node: dict, state: GraphState) -> dict:
             # Cooperative cancellation: bail before each node if the user cancelled.
             if await self._is_cancelled(run_id):
@@ -105,12 +126,33 @@ class RunEngine:
                 return await self._run_agent_node(run_id, node, state, agents)
             if node_type == "condition":
                 return {}  # pure routing; handled by outgoing conditional edges
+            if node_type == "human":
+                return await self._run_human_node(run_id, node, state, approved_node)
             if node_type == "channel_out":
                 return await self._run_channel_out(run_id, node, state)
-            # Stubbed node types (transform/human/parallel/channel_in).
+            # Stubbed node types (transform/parallel/channel_in).
             return {"metadata": {f"skipped_{node['id']}": node_type}}
 
         return node_runner
+
+    async def _run_human_node(
+        self, run_id: uuid.UUID, node: dict, state: GraphState, approved_node: str | None
+    ) -> dict:
+        """First visit: snapshot state, raise a pending approval, pause. On resume
+        (this node was approved), pass straight through to the downstream nodes."""
+        node_id = node["id"]
+        if approved_node == node_id:
+            return {}  # approved — continue the workflow
+        from app.db.repositories import ApprovalRepository
+
+        summary = node.get("label") or node.get("summary") or "Human approval required to continue."
+        async with self.session_factory() as s:
+            await ApprovalRepository(s).create(
+                run_id=run_id, node_id=node_id, summary=str(summary), state=_snapshot(state)
+            )
+            await s.commit()
+        await publish_event(run_id, "approval.requested", {"node_id": node_id, "summary": str(summary)})
+        raise RunPaused(node_id, str(summary))
 
     async def _run_agent_node(
         self, run_id: uuid.UUID, node: dict, state: GraphState, agents: dict[str, dict]
@@ -306,6 +348,16 @@ class RunEngine:
             run = await RunRepository(s).get(run_id)
             return run is not None and run.status == "cancelled"
 
+    async def _pending_resume(self, run_id: uuid.UUID) -> dict | None:
+        """If this run was approved after a pause, return where/how to resume."""
+        from app.db.repositories import ApprovalRepository
+
+        async with self.session_factory() as s:
+            appr = await ApprovalRepository(s).latest_approved(run_id)
+            if appr is None:
+                return None
+            return {"node_id": appr.node_id, "state": appr.state}
+
     async def _mark_running(self, run_id: uuid.UUID) -> None:
         async with self.session_factory() as s:
             repo = RunRepository(s)
@@ -382,6 +434,31 @@ def _resolve_ref(ref: str, state: GraphState) -> Any:
         else:
             return None
     return cur
+
+
+def _snapshot(state: GraphState) -> dict:
+    """Full state capture so a paused run can resume exactly where it left off."""
+    return {
+        "variables": state.get("variables", {}),
+        "artifacts": state.get("artifacts", {}),
+        "messages": state.get("messages", []),
+        "iteration_count": state.get("iteration_count", 0),
+        "current_agent": state.get("current_agent"),
+        "metadata": state.get("metadata", {}),
+    }
+
+
+def _restore_state(snap: dict | None, run_id: str) -> GraphState:
+    s = snap or {}
+    return GraphState(
+        run_id=run_id,
+        variables=s.get("variables", {}),
+        artifacts=s.get("artifacts", {}),
+        messages=s.get("messages", []),
+        current_agent=s.get("current_agent"),
+        iteration_count=s.get("iteration_count", 0),
+        metadata=s.get("metadata", {}),
+    )
 
 
 def _serializable(state: GraphState) -> dict:

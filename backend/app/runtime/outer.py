@@ -35,7 +35,7 @@ def _make_router(edges: list[dict]):
     return router
 
 
-def build_outer_graph(graph: dict, node_runner: NodeRunner):
+def build_outer_graph(graph: dict, node_runner: NodeRunner, entry_override: str | None = None):
     builder: StateGraph = StateGraph(GraphState)
 
     for node in graph["nodes"]:
@@ -65,7 +65,8 @@ def build_outer_graph(graph: dict, node_runner: NodeRunner):
             mapping[END] = END
             builder.add_conditional_edges(node_id, _make_router(outs), mapping)
 
-    builder.set_entry_point(graph["entry_node"])
+    # On resume, re-enter at the paused node instead of the workflow's entry.
+    builder.set_entry_point(entry_override or graph["entry_node"])
     return builder.compile()
 
 

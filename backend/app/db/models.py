@@ -400,3 +400,26 @@ class MediaAsset(Base):
     mime: Mapped[str | None] = mapped_column(String, nullable=True)
     storage_ref: Mapped[str | None] = mapped_column(String, nullable=True)  # path / url
     created_at: Mapped[datetime] = _now_col()
+
+
+# ── Human-in-the-loop approvals ──────────────────────────────────────────────
+
+
+class Approval(Base):
+    """A pause point raised by a workflow `human` node. The run halts at
+    status='paused' with the state snapshot in `state`; approving re-enqueues the
+    run, which resumes from this node."""
+
+    __tablename__ = "approvals"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    node_id: Mapped[str] = mapped_column(String, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pending")  # pending|approved|rejected
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)  # the approver's note
+    state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # graph state snapshot
+    created_at: Mapped[datetime] = _now_col()
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

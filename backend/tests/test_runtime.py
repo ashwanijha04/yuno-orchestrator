@@ -17,7 +17,7 @@ from app.harness.executor import HarnessExecutor
 from app.harness.providers import Script, StubProvider
 from app.runtime.engine import RunEngine
 
-_TABLES = "messages, steps, runs, workflow_versions, workflows, agents, channel_bindings, channels"
+_TABLES = "approvals, messages, steps, runs, workflow_versions, workflows, agents, channel_bindings, channels"
 
 
 @pytest_asyncio.fixture
@@ -111,6 +111,51 @@ async def test_workflow_execution_two_agents(clean_db):
         msgs = await repo.messages_for_run(run_id)
         assert [m.content for m in msgs] == ["found 3 sources", "your brief"]
         assert run.final_state["artifacts"] == {"research": "found 3 sources", "brief": "your brief"}
+
+
+async def test_human_node_pauses_then_resumes_after_approval(clean_db):
+    from app.db.repositories import ApprovalRepository
+
+    drafter = await _make_agent("Drafter", model_name="claude-sonnet-4-5")
+    publisher = await _make_agent("Publisher", model_name="claude-sonnet-4-5")
+    graph = {
+        "name": "Gate", "entry_node": "draft",
+        "variables": {"task": {"type": "string"}},
+        "nodes": [
+            {"id": "draft", "type": "agent", "agent_id": drafter, "output_key": "draft"},
+            {"id": "gate", "type": "human", "label": "approve the draft"},
+            {"id": "publish", "type": "agent", "agent_id": publisher,
+             "input_mapping": {"draft": "$.artifacts.draft"}, "output_key": "final"},
+        ],
+        "edges": [{"id": "e1", "from": "draft", "to": "gate"},
+                  {"id": "e2", "from": "gate", "to": "publish"}],
+    }
+    wf = await _make_workflow(graph)
+    run_id = await _make_run(wf, {"task": "slogan"})
+    # A fresh Script per pass (Script marks entries used); each pass's only LLM
+    # call is call_index 0.
+    def _script():
+        return Script([{"match": {"call_index": 0}, "response": {"content": "a draft"}}])
+
+    # First pass halts at the human gate.
+    assert await _engine(_script()).run(run_id) == "paused"
+    assert await _step_node_ids(run_id) == ["draft"]
+    async with SessionFactory() as s:
+        assert (await RunRepository(s).get(run_id)).status == "paused"
+        pending = await ApprovalRepository(s).pending()
+        assert len(pending) == 1 and pending[0].node_id == "gate"
+        await ApprovalRepository(s).decide(pending[0].id, "approved")
+        await s.commit()
+
+    # After approval the run resumes and finishes, with the draft artifact
+    # restored across the pause so `publish` can consume it.
+    assert await _engine(_script()).run(run_id) == "completed"
+    assert await _step_node_ids(run_id) == ["draft", "publish"]
+    async with SessionFactory() as s:
+        run = await RunRepository(s).get(run_id)
+        assert run.status == "completed"
+        assert run.final_state["artifacts"]["draft"] == "a draft"  # survived the pause
+        assert "final" in run.final_state["artifacts"]  # publish ran post-resume
 
 
 async def test_conditional_routing_takes_matching_branch(clean_db):
