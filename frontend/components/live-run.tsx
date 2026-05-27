@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, type RunDetail } from "@/lib/api";
+import { api, type Approval, type RunDetail } from "@/lib/api";
 import { subscribeRun, type RunEvent } from "@/lib/ws";
 import { Markdown } from "@/components/markdown";
 
@@ -36,6 +36,13 @@ function Thinking({ label = "thinking" }: { label?: string }) {
 
 const ACTIVE = (s: string) => s === "running" || s === "pending";
 
+function qcolor(q: string): string {
+  const v = parseFloat(q);
+  if (v >= 0.75) return "var(--color-status-completed)";
+  if (v >= 0.5) return "var(--color-status-paused)";
+  return "var(--color-status-failed)";
+}
+
 function latency(start: string, end: string | null): string | null {
   if (!end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
@@ -45,7 +52,32 @@ function latency(start: string, end: string | null): string | null {
 export function LiveRun({ runId }: { runId: string }) {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [liveStatus, setLiveStatus] = useState("pending");
+  const [approval, setApproval] = useState<Approval | null>(null);
+  const [busy, setBusy] = useState(false);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const reload = () => api.getRun(runId).then((r) => { setRun(r); setLiveStatus(r.status); }).catch(() => {});
+
+  // When paused, find this run's pending approval so we can act on it.
+  useEffect(() => {
+    if (run?.status !== "paused") { setApproval(null); return; }
+    api.listApprovals().then((a) => setApproval(a.find((x) => x.run_id === runId) ?? null)).catch(() => {});
+  }, [run?.status, runId]);
+
+  async function decide(decision: "approve" | "reject") {
+    if (!approval) return;
+    setBusy(true);
+    try { await api.decideApproval(approval.id, decision); setApproval(null); await reload(); }
+    finally { setBusy(false); }
+  }
+  async function evaluate() {
+    setBusy(true);
+    try { await api.evaluateRun(runId); await reload(); } finally { setBusy(false); }
+  }
+  async function feedback(positive: boolean) {
+    setBusy(true);
+    try { await api.feedbackRun(runId, positive); await reload(); } finally { setBusy(false); }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -93,6 +125,12 @@ export function LiveRun({ runId }: { runId: string }) {
           {running && <span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ background: "var(--color-status-running)" }} />}
           <StatusPill status={status} />
           <span className="font-mono text-xs text-[var(--color-muted-foreground)]">${run?.total_cost_usd ?? "0"}</span>
+          {run?.quality != null && (
+            <span className="rounded-full border px-2 py-0.5 font-mono text-xs"
+              style={{ color: qcolor(run.quality), borderColor: qcolor(run.quality) }}>
+              Q {Math.round(parseFloat(run.quality) * 100)}
+            </span>
+          )}
           {running && (
             <button
               onClick={() => api.cancelRun(runId).catch(() => {})}
@@ -115,6 +153,45 @@ export function LiveRun({ runId }: { runId: string }) {
 
       {run?.error && (
         <div className="rounded-md border border-[var(--color-status-failed)] p-2 text-xs text-[var(--color-status-failed)]">{run.error}</div>
+      )}
+
+      {/* Human-in-the-loop: a paused run awaiting approval */}
+      {status === "paused" && approval && (
+        <div className="glow rounded-[var(--radius)] border border-[var(--color-status-paused)] bg-[var(--color-card)] p-4">
+          <p className="text-sm font-medium text-[var(--color-status-paused)]">⏸ Approval required</p>
+          <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">{approval.summary}</p>
+          <div className="mt-3 flex gap-2">
+            <button disabled={busy} onClick={() => decide("approve")}
+              className="rounded-md bg-[var(--color-status-completed)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-foreground)] disabled:opacity-50">
+              ✓ Approve & resume
+            </button>
+            <button disabled={busy} onClick={() => decide("reject")}
+              className="rounded-md border border-[var(--color-status-failed)] px-3 py-1.5 text-sm text-[var(--color-status-failed)] disabled:opacity-50">
+              ✕ Reject
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Quality: evaluate + 👍/👎, shown once the run has finished */}
+      {(status === "completed" || status === "failed") && (
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-sm">
+          <span className="text-xs text-[var(--color-muted-foreground)]">Quality</span>
+          <button disabled={busy} onClick={evaluate}
+            className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs hover:border-[var(--color-primary)] disabled:opacity-50">
+            ✦ Evaluate
+          </button>
+          <button disabled={busy} onClick={() => feedback(true)} title="Good"
+            className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs hover:border-[var(--color-status-completed)] disabled:opacity-50">👍</button>
+          <button disabled={busy} onClick={() => feedback(false)} title="Needs work"
+            className="rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs hover:border-[var(--color-status-failed)] disabled:opacity-50">👎</button>
+          {(run?.evaluations ?? []).slice(0, 1).map((e) => (
+            <span key={e.id} className="ml-auto text-xs text-[var(--color-muted-foreground)]">
+              {e.source === "judge" ? "judge" : "you"}: {e.verdict ?? "—"}
+              {e.rationale ? ` · ${e.rationale.slice(0, 80)}` : ""}
+            </span>
+          ))}
+        </div>
       )}
 
       {/* who-is-doing-what: one card per agent step */}

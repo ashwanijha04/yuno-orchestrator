@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 const NAV = [
-  { href: "/", label: "Dashboard" },
+  { href: "/", label: "Cockpit" },
   { href: "/orchestrate", label: "Orchestrate" },
   { href: "/runs", label: "Tasks" },
   { href: "/chat", label: "Chat" },
@@ -15,8 +15,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       <aside className="w-56 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-card)] p-4">
         <div className="mb-8 px-2">
-          <span className="text-lg font-semibold">Yuno</span>
-          <p className="text-xs text-[var(--color-muted-foreground)]">
+          <span className="font-mono text-lg font-semibold tracking-tight text-glow" style={{ color: "var(--color-primary)" }}>YUNO</span>
+          <p className="text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
             Agent Orchestration
           </p>
         </div>
@@ -49,8 +49,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function HealthBadge() {
   return (
     <span className="flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
-      <span className="h-2 w-2 rounded-full bg-[var(--color-status-completed)]" />
-      control plane
+      <span className="h-2 w-2 rounded-full hud-pulse bg-[var(--color-status-completed)]" />
+      JARVIS ONLINE
     </span>
   );
 }

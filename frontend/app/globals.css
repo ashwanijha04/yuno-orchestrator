@@ -1,24 +1,24 @@
 @import "tailwindcss";
 
-/* Dark-first design tokens (zinc base, one accent). shadcn init refines these
-   in Phase 4/8; this is the baseline so the app shell renders with intent. */
+/* Stark-HUD design tokens: deep blue-black canvas, holographic cyan accent,
+   mono telemetry. Changing token values re-skins the whole app cohesively. */
 @theme inline {
-  --color-background: oklch(0.15 0 0);
-  --color-foreground: oklch(0.985 0 0);
-  --color-card: oklch(0.2 0 0);
-  --color-card-foreground: oklch(0.985 0 0);
-  --color-muted: oklch(0.27 0 0);
-  --color-muted-foreground: oklch(0.708 0 0);
-  --color-border: oklch(0.27 0 0);
-  --color-primary: oklch(0.62 0.19 260);
-  --color-primary-foreground: oklch(0.985 0 0);
+  --color-background: oklch(0.14 0.012 248);
+  --color-foreground: oklch(0.97 0.005 230);
+  --color-card: oklch(0.18 0.016 248);
+  --color-card-foreground: oklch(0.97 0.005 230);
+  --color-muted: oklch(0.24 0.02 248);
+  --color-muted-foreground: oklch(0.72 0.02 230);
+  --color-border: oklch(0.3 0.025 245);
+  --color-primary: oklch(0.78 0.13 205);
+  --color-primary-foreground: oklch(0.14 0.02 248);
 
   /* Run/step status tokens */
-  --color-status-running: oklch(0.62 0.19 260);
-  --color-status-completed: oklch(0.72 0.19 150);
-  --color-status-failed: oklch(0.58 0.22 25);
-  --color-status-pending: oklch(0.55 0 0);
-  --color-status-paused: oklch(0.78 0.16 80);
+  --color-status-running: oklch(0.78 0.13 205);
+  --color-status-completed: oklch(0.78 0.17 155);
+  --color-status-failed: oklch(0.63 0.22 22);
+  --color-status-pending: oklch(0.6 0.02 245);
+  --color-status-paused: oklch(0.82 0.15 85);
 
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
@@ -34,6 +34,20 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-sans);
 }
+
+/* ── HUD helpers ─────────────────────────────────────────────────────────── */
+.hud-grid {
+  background-image:
+    linear-gradient(oklch(0.78 0.13 205 / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.78 0.13 205 / 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.glow { box-shadow: 0 0 0 1px oklch(0.78 0.13 205 / 0.3), 0 0 24px oklch(0.78 0.13 205 / 0.18); }
+.text-glow { text-shadow: 0 0 12px oklch(0.78 0.13 205 / 0.5); }
+@keyframes hud-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.hud-pulse { animation: hud-pulse 1.6s ease-in-out infinite; }
+@keyframes hud-dash { to { stroke-dashoffset: -16; } }
+.hud-flow { stroke-dasharray: 4 4; animation: hud-dash 0.6s linear infinite; }
 
 /* Rendered markdown (agent output / chat). Tailwind preflight strips defaults,
    so restore readable typography scoped to .md. */

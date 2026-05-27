@@ -1,115 +1,178 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, type Run, type Stats } from "@/lib/api";
+import { api, type Agent, type Approval, type Run, type Stats } from "@/lib/api";
+import { AgentConstellation } from "@/components/agent-constellation";
+import { Markdown } from "@/components/markdown";
 
 const STATUS_COLOR: Record<string, string> = {
   running: "var(--color-status-running)",
   completed: "var(--color-status-completed)",
   failed: "var(--color-status-failed)",
   pending: "var(--color-status-pending)",
+  paused: "var(--color-status-paused)",
   cancelled: "var(--color-muted-foreground)",
 };
 
-function ago(iso: string): string {
-  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
-
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) return <p className="text-sm text-[var(--color-muted-foreground)]">Not enough data yet.</p>;
-  const W = 600, H = 56, max = Math.max(...values, 0.000001);
-  const pts = values.map((v, i) => {
-    const x = (i / (values.length - 1)) * W;
-    const y = H - (v / max) * (H - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
+function Gauge({ label, value, accent, pulse }: { label: string; value: string | number; accent?: string; pulse?: boolean }) {
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-14 w-full">
-      <polyline fill="none" stroke="var(--color-primary)" strokeWidth="2" points={pts.join(" ")} />
-      <polygon fill="var(--color-primary)" opacity="0.12" points={`0,${H} ${pts.join(" ")} ${W},${H}`} />
-    </svg>
-  );
-}
-
-function Stat({ label, value, href, accent, pulse }: { label: string; value: string | number; href?: string; accent?: string; pulse?: boolean }) {
-  const inner = (
-    <div className="rounded-[var(--radius)] border bg-[var(--color-card)] p-5 transition-colors hover:border-[var(--color-primary)]"
+    <div className="rounded-[var(--radius)] border bg-[var(--color-card)] p-3"
       style={{ borderColor: pulse ? "var(--color-status-running)" : "var(--color-border)" }}>
-      <p className="flex items-center gap-2 text-sm text-[var(--color-muted-foreground)]">
-        {pulse && <span className="h-2 w-2 animate-pulse rounded-full" style={{ background: "var(--color-status-running)" }} />}
+      <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">
+        {pulse && <span className="h-1.5 w-1.5 rounded-full hud-pulse" style={{ background: "var(--color-status-running)" }} />}
         {label}
       </p>
-      <p className="mt-2 font-mono text-2xl" style={accent ? { color: accent } : undefined}>{value}</p>
+      <p className="mt-1 font-mono text-xl" style={accent ? { color: accent } : undefined}>{value}</p>
     </div>
   );
-  return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
-export default function Dashboard() {
+type Turn = { role: "user" | "assistant"; content: string };
+
+function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [input, setInput] = useState("");
+  const [convo, setConvo] = useState<string | undefined>();
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, busy]);
+
+  async function send() {
+    const msg = input.trim();
+    if (!msg || !jarvisId || busy) return;
+    setInput(""); setBusy(true);
+    setTurns((t) => [...t, { role: "user", content: msg }]);
+    try {
+      const res = await api.chat(jarvisId, msg, convo);
+      setConvo(res.conversation_id);
+      setTurns((t) => [...t, { role: "assistant", content: res.reply }]);
+    } catch (e) {
+      setTurns((t) => [...t, { role: "assistant", content: `⚠️ ${String(e)}` }]);
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="flex h-full flex-col rounded-[var(--radius)] border border-[var(--color-primary)]/40 bg-[var(--color-card)] glow">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2.5">
+        <span className="h-2 w-2 rounded-full hud-pulse" style={{ background: "var(--color-primary)" }} />
+        <span className="font-mono text-sm text-glow" style={{ color: "var(--color-primary)" }}>JARVIS</span>
+        <span className="text-xs text-[var(--color-muted-foreground)]">· your AI chief of staff</span>
+      </div>
+      <div className="min-h-[180px] flex-1 space-y-3 overflow-auto p-4">
+        {turns.length === 0 && (
+          <p className="text-sm text-[var(--color-muted-foreground)]">
+            Ask me to plan something, build a team of agents, or run a task. e.g.{" "}
+            <em>“Research the case for AI agents and write a 3-bullet brief.”</em>
+          </p>
+        )}
+        {turns.map((t, i) => (
+          <div key={i} className={t.role === "user" ? "text-right" : ""}>
+            <div className={`inline-block max-w-[90%] rounded-[var(--radius)] px-3 py-2 text-left text-sm ${
+              t.role === "user" ? "bg-[var(--color-muted)]" : "border border-[var(--color-border)] bg-[var(--color-background)]"}`}>
+              {t.role === "assistant" ? <Markdown>{t.content}</Markdown> : t.content}
+            </div>
+          </div>
+        ))}
+        {busy && <p className="text-xs text-[var(--color-status-running)] hud-pulse">Jarvis is thinking…</p>}
+        <div ref={endRef} />
+      </div>
+      <div className="flex gap-2 border-t border-[var(--color-border)] p-3">
+        <input
+          value={input} onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          placeholder={jarvisId ? "Tell Jarvis what to do…" : "Seed agents to enable Jarvis (python -m scripts.seed)"}
+          disabled={!jarvisId || busy}
+          className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)] disabled:opacity-50" />
+        <button onClick={send} disabled={!jarvisId || busy || !input.trim()}
+          className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-foreground)] disabled:opacity-50">
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function Cockpit() {
   const [s, setS] = useState<Stats | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [jarvis, setJarvis] = useState<string | null>(null);
 
   useEffect(() => {
+    api.listAgents().then((a) => setJarvis(a.find((x: Agent) => x.name === "Jarvis")?.id ?? null)).catch(() => {});
     const load = () => {
       api.stats().then(setS).catch(() => {});
       api.listRuns().then(setRuns).catch(() => {});
+      api.listApprovals().then(setApprovals).catch(() => {});
     };
     load();
     const t = setInterval(load, 3000);
     return () => clearInterval(t);
   }, []);
 
+  async function decide(a: Approval, decision: "approve" | "reject") {
+    await api.decideApproval(a.id, decision).catch(() => {});
+    setApprovals((list) => list.filter((x) => x.id !== a.id));
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="mt-1 text-sm text-[var(--color-muted-foreground)]">Your agents, tasks, and spend at a glance.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Mission Control</h1>
+          <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">Talk to Jarvis. Watch the team work.</p>
         </div>
-        <Link href="/orchestrate" className="rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm text-[var(--color-primary-foreground)]">
+        <Link href="/orchestrate" className="rounded-md border border-[var(--color-primary)] px-4 py-2 text-sm text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-foreground)]">
           Orchestrate a task ▶
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Agents" value={s?.agents ?? "—"} href="/agents" />
-        <Stat label="Tasks (24h)" value={s?.runs_today ?? "—"} href="/runs" />
-        <Stat label="Running now" value={s?.running ?? "—"} accent={s?.running ? "var(--color-status-running)" : undefined} pulse={!!s?.running} href="/runs" />
-        <Stat label="Total spend" value={s ? `$${s.total_cost_usd}` : "—"} />
-      </div>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Tasks total" value={s?.runs_total ?? "—"} href="/runs" />
-        <Stat label="Completed" value={s?.completed ?? "—"} accent="var(--color-status-completed)" />
-        <Stat label="Failed" value={s?.failed ?? "—"} accent={s?.failed ? "var(--color-status-failed)" : undefined} />
-        <Stat label="Tokens used" value={s ? s.total_tokens.toLocaleString() : "—"} />
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div className="h-[420px]"><JarvisConsole jarvisId={jarvis} /></div>
+        <div className="hud-grid h-[420px] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
+          <AgentConstellation />
+        </div>
       </div>
 
-      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
-        <p className="mb-1 font-medium">Cumulative spend</p>
-        <p className="mb-2 text-xs text-[var(--color-muted-foreground)]">across the last {runs.length} tasks</p>
-        <Sparkline values={(() => {
-          let c = 0;
-          return [...runs].reverse().map((r) => (c += parseFloat(r.total_cost_usd || "0")));
-        })()} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Gauge label="Running" value={s?.running ?? "—"} accent={s?.running ? "var(--color-status-running)" : undefined} pulse={!!s?.running} />
+        <Gauge label="Approvals" value={approvals.length} accent={approvals.length ? "var(--color-status-paused)" : undefined} pulse={approvals.length > 0} />
+        <Gauge label="Agents" value={s?.agents ?? "—"} />
+        <Gauge label="Spend" value={s ? `$${s.total_cost_usd}` : "—"} />
+        <Gauge label="Tokens" value={s ? s.total_tokens.toLocaleString() : "—"} />
       </div>
 
-      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-5">
+      {approvals.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-[var(--color-status-paused)]">⏸ Awaiting your approval</p>
+          {approvals.map((a) => (
+            <div key={a.id} className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-status-paused)] bg-[var(--color-card)] p-3">
+              <span className="min-w-0 flex-1 truncate text-sm">{a.summary}</span>
+              <Link href={`/runs/${a.run_id}`} className="shrink-0 text-xs text-[var(--color-muted-foreground)] hover:underline">view run →</Link>
+              <button onClick={() => decide(a, "approve")} className="shrink-0 rounded-md bg-[var(--color-status-completed)] px-3 py-1 text-xs font-medium text-[var(--color-primary-foreground)]">✓ Approve</button>
+              <button onClick={() => decide(a, "reject")} className="shrink-0 rounded-md border border-[var(--color-status-failed)] px-3 py-1 text-xs text-[var(--color-status-failed)]">✕ Reject</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
         <div className="mb-3 flex items-center justify-between">
-          <p className="font-medium">Recent tasks</p>
+          <p className="font-medium">Recent activity</p>
           <Link href="/runs" className="text-xs text-[var(--color-muted-foreground)] hover:underline">View all →</Link>
         </div>
-        {runs.length === 0 && <p className="text-sm text-[var(--color-muted-foreground)]">No tasks yet — orchestrate one.</p>}
+        {runs.length === 0 && <p className="text-sm text-[var(--color-muted-foreground)]">No tasks yet — ask Jarvis.</p>}
         <div className="space-y-1">
           {runs.slice(0, 6).map((r) => (
             <Link key={r.id} href={`/runs/${r.id}`} className="flex items-center gap-3 rounded-md p-2 hover:bg-[var(--color-muted)]">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[r.status] ?? "var(--color-muted)" }} />
               <span className="min-w-0 flex-1 truncate text-sm">{r.task || r.workflow_name || "Run"}</span>
-              <span className="shrink-0 text-xs text-[var(--color-muted-foreground)]">{ago(r.started_at)}</span>
+              {r.quality != null && (
+                <span className="shrink-0 font-mono text-[10px] text-[var(--color-muted-foreground)]">Q{Math.round(parseFloat(r.quality) * 100)}</span>
+              )}
+              <span className="shrink-0 text-xs capitalize" style={{ color: STATUS_COLOR[r.status] }}>{r.status}</span>
               <span className="w-16 shrink-0 text-right font-mono text-xs text-[var(--color-muted-foreground)]">${r.total_cost_usd}</span>
             </Link>
           ))}

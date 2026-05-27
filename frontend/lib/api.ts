@@ -45,6 +45,7 @@ export interface Run {
   workflow_name: string | null;
   task: string | null;
   agent_names: string[];
+  quality: string | null; // latest judge score 0..1
 }
 
 export interface Step {
@@ -85,10 +86,30 @@ export interface ChildRun {
   total_cost_usd: string;
 }
 
+export interface Evaluation {
+  id: string;
+  source: string; // judge | human
+  overall: string | null;
+  scores: Record<string, number>;
+  verdict: string | null;
+  rationale: string | null;
+  created_at: string;
+}
+
 export interface RunDetail extends Run {
   steps: Step[];
   messages: Message[];
   children: ChildRun[];
+  evaluations: Evaluation[];
+}
+
+export interface Approval {
+  id: string;
+  run_id: string;
+  node_id: string;
+  summary: string;
+  status: string;
+  note: string | null;
 }
 
 export interface Tool {
@@ -202,6 +223,18 @@ export const api = {
   getRun: (id: string) => req<RunDetail>(`/runs/${id}`),
   deleteRun: (id: string) => req<void>(`/runs/${id}`, { method: "DELETE" }),
   cancelRun: (id: string) => req<Run>(`/runs/${id}/cancel`, { method: "POST" }),
+  evaluateRun: (id: string) => req<Evaluation>(`/runs/${id}/evaluate`, { method: "POST" }),
+  feedbackRun: (id: string, positive: boolean, note?: string) =>
+    req<Evaluation>(`/runs/${id}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ positive, note: note ?? null }),
+    }),
+  listApprovals: () => req<Approval[]>("/approvals"),
+  decideApproval: (id: string, decision: "approve" | "reject", note?: string) =>
+    req<Approval>(`/approvals/${id}`, {
+      method: "POST",
+      body: JSON.stringify({ decision, note: note ?? null }),
+    }),
   clearFinishedRuns: () => req<{ deleted: number }>("/runs/clear", { method: "POST" }),
   orchestrate: (task: string, agentIds: string[], mode: "pipeline" | "auto") =>
     req<Run>("/orchestrate", {
