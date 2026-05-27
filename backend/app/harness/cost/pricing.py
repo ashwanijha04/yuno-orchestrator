@@ -17,6 +17,10 @@ _PRICING: dict[str, CostModel] = {
     # OpenAI
     "gpt-4o": CostModel(Decimal("0.0025"), Decimal("0.010")),
     "gpt-4o-mini": CostModel(Decimal("0.00015"), Decimal("0.0006")),
+    # Google Gemini
+    "gemini-1.5-flash": CostModel(Decimal("0.000075"), Decimal("0.0003")),
+    "gemini-2.0-flash": CostModel(Decimal("0.0001"), Decimal("0.0004")),
+    "gemini-1.5-pro": CostModel(Decimal("0.00125"), Decimal("0.005")),
     # Deterministic providers
     "stub": CostModel(Decimal("0"), Decimal("0")),
 }

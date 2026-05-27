@@ -70,7 +70,11 @@ async def orchestrate(body: OrchestrateRequest, session: AsyncSession = Depends(
 
     if body.mode == "auto":
         coordinator = await _get_or_create_coordinator(session)
-        roster = "\n".join(f"- {a.name}: {a.role}" for a in agents) or "(any agent you know of)"
+        # If the user didn't pick agents, the orchestrator chooses from the whole
+        # roster itself (goal -> auto-plan -> delegate).
+        if not agents:
+            agents = [a for a in await agent_repo.list() if a.name != COORDINATOR_NAME]
+        roster = "\n".join(f"- {a.name}: {a.role}" for a in agents) or "(no other agents available)"
         graph = {
             "version": "1.0", "name": "Orchestration (auto)", "entry_node": "coordinator",
             "variables": {"task": {"type": "string"}},

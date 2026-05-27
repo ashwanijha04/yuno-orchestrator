@@ -63,6 +63,12 @@ export function LiveRun({ runId }: { runId: string }) {
         <a href={`/runs/${runId}`} className="ml-auto text-xs text-[var(--color-muted-foreground)] hover:underline">open run →</a>
       </div>
 
+      {run?.error && (
+        <div className="rounded-md border border-[var(--color-status-failed)] p-2 text-xs text-[var(--color-status-failed)]">
+          {run.error}
+        </div>
+      )}
+
       <div className="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
         {steps.length === 0 && <p className="text-sm text-[var(--color-muted-foreground)]">Waiting for the first agent…</p>}
         {steps.map((s, i) => (

@@ -75,8 +75,13 @@ async def send(body: ChatRequest, session: AsyncSession = Depends(get_session)):
     await RunEngine(session_factory=SessionFactory).run(run_id)
 
     async with SessionFactory() as s:
-        msgs = await RunRepository(s).messages_for_run(run_id)
-    reply = next((m.content for m in reversed(msgs) if m.role == "assistant"), "(no reply)")
+        repo = RunRepository(s)
+        msgs = await repo.messages_for_run(run_id)
+        reply = next((m.content for m in reversed(msgs) if m.role == "assistant"), None)
+        if reply is None:
+            # Surface the real failure (e.g. provider quota/auth) instead of a blank.
+            run = await repo.get(run_id)
+            reply = f"⚠️ {run.error}" if run and run.error else "(no reply)"
     return ChatResponse(conversation_id=conversation_id, reply=reply, run_id=run_id)
 
 

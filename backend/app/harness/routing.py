@@ -20,7 +20,7 @@ from app.harness.cost import get_cost_model
 ROUTES: dict[str, list[tuple[str, str]]] = {
     "coding": [("anthropic", "claude-sonnet-4-6"), ("openai", "gpt-4o")],
     "normal": [("openai", "gpt-4o-mini"), ("anthropic", "claude-haiku-4-5")],
-    "conversation": [("gemini", "gemini-1.5-flash"), ("openai", "gpt-4o-mini"), ("anthropic", "claude-haiku-4-5")],
+    "conversation": [("gemini", "gemini-2.0-flash"), ("openai", "gpt-4o-mini"), ("anthropic", "claude-haiku-4-5")],
 }
 DEFAULT_TASK = "normal"
 
@@ -80,7 +80,13 @@ def resolve(
 
     available = [(p, m) for (p, m) in pairs if _has_key(p)]
     if not available:
-        # No keys for any routed provider — stay up via the stub.
+        # The routed providers have no key — fall back to ANY provider that does,
+        # so a single configured key serves every task type.
+        for p, m in (("openai", "gpt-4o-mini"), ("anthropic", "claude-haiku-4-5"), ("gemini", "gemini-2.0-flash")):
+            if _has_key(p):
+                available.append((p, m))
+    if not available:
+        # No keys at all — stay up via the deterministic stub.
         return [_stub_candidate(explicit_model or (pairs[0][1] if pairs else "stub"))]
 
     return [ProviderCandidate(_provider_for(p), m, get_cost_model(m)) for (p, m) in available]
