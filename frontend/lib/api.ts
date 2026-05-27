@@ -60,8 +60,10 @@ export interface Message {
   id: string;
   step_id: string | null;
   agent_id: string | null;
+  recipient_agent_id: string | null;
   role: string;
   content: string;
+  tool_calls: unknown;
   cost_usd: string;
   tokens_in: number;
   tokens_out: number;

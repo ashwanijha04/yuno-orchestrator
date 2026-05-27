@@ -190,8 +190,10 @@ class MessageOut(BaseModel):
     id: uuid.UUID
     step_id: uuid.UUID | None
     agent_id: uuid.UUID | None
+    recipient_agent_id: uuid.UUID | None
     role: str
     content: str
+    tool_calls: list[dict] | dict | None
     cost_usd: Decimal
     tokens_in: int
     tokens_out: int

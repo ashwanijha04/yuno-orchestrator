@@ -110,14 +110,38 @@ export default function RunPage({ params }: { params: Promise<{ id: string }> })
       </div>
 
       {run && run.messages.length > 0 && (
-        <div className="space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-          <p className="font-medium">Messages</p>
-          {run.messages.map((m) => (
-            <div key={m.id} className="text-sm">
-              <span className="font-mono text-xs text-[var(--color-muted-foreground)]">{m.role}</span>
-              <p>{m.content}</p>
-            </div>
-          ))}
+        <div className="space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
+          <p className="font-medium">Conversation &amp; handoffs</p>
+          {run.messages.map((m) => {
+            // Role-aware rendering so "who talks to whom" is legible.
+            if (m.role === "agent") {
+              return (
+                <div key={m.id} className="border-l-2 border-[var(--color-status-running)] pl-3 text-sm">
+                  <span className="text-xs font-medium text-[var(--color-status-running)]">→ handoff to another agent</span>
+                  <p className="text-[var(--color-muted-foreground)]">{m.content}</p>
+                </div>
+              );
+            }
+            if (m.role === "tool") {
+              return (
+                <div key={m.id} className="pl-3 font-mono text-xs text-[var(--color-muted-foreground)]">
+                  ↳ tool · {m.content.slice(0, 160)}
+                </div>
+              );
+            }
+            const blocked = m.content.startsWith("[blocked");
+            return (
+              <div key={m.id} className="text-sm">
+                <span className="font-mono text-xs text-[var(--color-muted-foreground)]">{m.role}</span>
+                {(m.tool_calls as unknown[] | null)?.length ? (
+                  <span className="ml-2 text-xs text-[var(--color-status-running)]">
+                    calls {(m.tool_calls as { name?: string }[]).map((t) => t.name).join(", ")}
+                  </span>
+                ) : null}
+                <p className={blocked ? "text-[var(--color-status-failed)]" : ""}>{m.content}</p>
+              </div>
+            );
+          })}
         </div>
       )}
 
