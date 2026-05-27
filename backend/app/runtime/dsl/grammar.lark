@@ -1,0 +1,37 @@
+// Edge-condition expression grammar. Safe to load from untrusted workflow JSON:
+// no arbitrary code, only comparisons / boolean logic / dotted state paths.
+
+?start: orexpr
+
+?orexpr: andexpr
+       | orexpr "||" andexpr      -> or_op
+
+?andexpr: notexpr
+        | andexpr "&&" notexpr     -> and_op
+
+?notexpr: "!" notexpr              -> not_op
+        | comp
+
+?comp: value
+     | value "==" value            -> eq
+     | value "!=" value            -> ne
+     | value "<" value             -> lt
+     | value ">" value             -> gt
+     | value "<=" value            -> le
+     | value ">=" value            -> ge
+     | value "contains" ESCAPED_STRING -> contains
+
+?value: "(" orexpr ")"
+      | path                       -> getpath
+      | ESCAPED_STRING             -> str_lit
+      | SIGNED_NUMBER              -> num_lit
+      | "true"                     -> true_lit
+      | "false"                    -> false_lit
+
+path: CNAME ("." CNAME)*
+
+%import common.ESCAPED_STRING
+%import common.SIGNED_NUMBER
+%import common.CNAME
+%import common.WS
+%ignore WS

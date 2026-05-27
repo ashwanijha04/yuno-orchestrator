@@ -69,6 +69,18 @@ class RunRepository:
         await self.session.flush()
         return step
 
+    async def complete_step(
+        self, step_id: uuid.UUID, status: str, error: str | None = None
+    ) -> Step | None:
+        step = await self.session.get(Step, step_id)
+        if step is None:
+            return None
+        step.status = status
+        step.error = error
+        step.completed_at = datetime.now(UTC)
+        await self.session.flush()
+        return step
+
     async def add_message(
         self, run_id: uuid.UUID, role: str, content: str,
         step_id: uuid.UUID | None = None, cost_usd: Decimal = Decimal("0"),
