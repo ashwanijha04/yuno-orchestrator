@@ -80,15 +80,38 @@ TOOL_DEFS: dict[str, ToolDef] = {
 }
 
 
+# MCP tools discovered from connected servers (mcp__<server>__<tool>). Populated
+# by refresh_mcp_tools() at startup so they're grantable + visible like built-ins.
+MCP_DEFS: dict[str, ToolDef] = {}
+
+
+async def refresh_mcp_tools() -> int:
+    """Discover tools from configured MCP servers and register them. Best-effort."""
+    from app.mcp.client import discover
+
+    discovered = await discover()
+    MCP_DEFS.clear()
+    for server, tools in discovered.items():
+        for t in tools:
+            name = f"mcp__{server}__{t['name']}"
+            MCP_DEFS[name] = ToolDef(name, f"[MCP·{server}] {t['description']}", t["input_schema"] or {"type": "object", "properties": {}})
+    return len(MCP_DEFS)
+
+
+def _all_defs() -> dict[str, ToolDef]:
+    return {**TOOL_DEFS, **MCP_DEFS}
+
+
 def list_tools() -> list[ToolDef]:
-    return list(TOOL_DEFS.values())
+    return list(_all_defs().values())
 
 
 def schemas_for(tool_ids: list[str]) -> list[dict]:
     """Tool JSON schemas (Anthropic tool format) for the agent's granted tools."""
+    defs = _all_defs()
     out = []
     for tid in tool_ids:
-        td = TOOL_DEFS.get(tid)
+        td = defs.get(tid)
         if td:
             out.append({"name": td.name, "description": td.description, "input_schema": td.input_schema})
     return out

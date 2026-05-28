@@ -29,6 +29,8 @@ dependencies = [
     "numpy>=1.26",
     "psycopg2-binary>=2.9",
     "pgvector>=0.3",
+    # Model Context Protocol — connect external MCP servers; expose their tools.
+    "mcp>=1.0",
 ]
 
 [project.optional-dependencies]

@@ -33,6 +33,15 @@ class ToolRuntime:
         self.tools = {t.name: t for t in impls}
 
     async def __call__(self, name: str, input: dict, ctx: dict) -> dict:
+        # MCP tools (mcp__<server>__<tool>) route to the MCP client.
+        if name.startswith("mcp__"):
+            from app.mcp import client as mcp_client
+
+            parts = name.split("__", 2)
+            if len(parts) == 3:
+                return await mcp_client.call(parts[1], parts[2], input)
+            return {"error": f"malformed MCP tool name {name!r}"}
+
         tool = self.tools.get(name)
         if tool is None:
             return {"error": f"unknown tool {name!r}"}

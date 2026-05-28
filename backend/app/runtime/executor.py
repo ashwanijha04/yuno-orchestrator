@@ -135,6 +135,13 @@ async def main() -> None:
         loop.add_signal_handler(sig, stop.set)
 
     await _check_dependencies()
+    # Discover MCP tools so agents running here can use them (mcp__server__tool).
+    try:
+        from app.tools.registry import refresh_mcp_tools
+
+        log.info("mcp.tools_discovered", count=await refresh_mcp_tools())
+    except Exception as exc:  # noqa: BLE001
+        log.warning("mcp.discover_failed", detail=str(exc))
     log.info("worker.ready", stream=queue.STREAM, group=queue.GROUP)
 
     tasks = [

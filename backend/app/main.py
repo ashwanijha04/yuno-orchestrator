@@ -31,6 +31,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await get_redis().ping()
     except Exception as exc:  # noqa: BLE001
         log.warning("redis.unreachable_at_boot", detail=str(exc))
+    # Discover MCP tools so agents can be granted them and the UI can list them.
+    try:
+        from app.tools.registry import refresh_mcp_tools
+
+        n = await refresh_mcp_tools()
+        log.info("mcp.tools_discovered", count=n)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("mcp.discover_failed", detail=str(exc))
     yield
     await close_redis()
     log.info("control_plane.stopped")
