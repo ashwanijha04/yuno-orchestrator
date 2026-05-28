@@ -153,8 +153,11 @@ class ExternalMemoryStrategy:
         if not query:
             return []  # nothing to retrieve against yet
         try:
+            # min_score=0 so the recency-ranked recent memories surface too — not
+            # only close semantic matches — so an agent can answer "what did I do
+            # lately?" and stays aware of its recent work.
             results = await _call(
-                str(agent_id), lambda mem: mem.recall(query, limit=self.max_messages)
+                str(agent_id), lambda mem: mem.recall(query, limit=self.max_messages, min_score=0.0)
             )
             return [
                 {"role": "system", "content": f"[memory] {r.memory.content}"}

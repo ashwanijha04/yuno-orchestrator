@@ -206,7 +206,9 @@ async def main() -> None:
                 continue
             defaults = dict(
                 model_provider="anthropic", temperature=0.7, max_tokens=1024,
-                memory_policy={"strategy": "buffer"},
+                # Long-term memory by default so agents remember their work across
+                # tasks and self-improve from evaluations.
+                memory_policy={"strategy": "external"},
                 guardrails={"max_iterations": 6, "max_cost_per_run_usd": "0.50"}, harness={},
             )
             agent = await agent_repo.create(**{**defaults, **spec})

@@ -51,7 +51,7 @@ class CreateAgentTool:
                 model_name="gpt-4o-mini",
                 task_type=task_type,
                 tool_ids=tool_ids,
-                memory_policy={"strategy": "buffer"},
+                memory_policy={"strategy": "external"},  # long-term memory by default — agents remember + improve
                 guardrails={"max_iterations": 6, "max_cost_per_run_usd": "0.50"},
                 harness={},
             )
