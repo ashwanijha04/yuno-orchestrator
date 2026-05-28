@@ -78,6 +78,13 @@ class WorkflowOut(BaseModel):
     description: str | None
     current_version: int
     created_at: datetime
+    # Enriched for the gallery (not on the ORM row).
+    node_count: int = 0
+    agent_count: int = 0
+    badges: list[str] = Field(default_factory=list)  # tools, mcp, human, branch, error
+    is_template: bool = False
+    last_run_status: str | None = None
+    last_run_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

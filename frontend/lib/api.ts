@@ -155,6 +155,12 @@ export interface Workflow {
   description: string | null;
   current_version: number;
   created_at: string;
+  node_count: number;
+  agent_count: number;
+  badges: string[]; // tools, mcp, human, branch, error
+  is_template: boolean;
+  last_run_status: string | null;
+  last_run_at: string | null;
 }
 
 export interface WorkflowGraph {

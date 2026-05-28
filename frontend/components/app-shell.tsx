@@ -2,11 +2,10 @@ import Link from "next/link";
 
 const NAV = [
   { href: "/", label: "Cockpit" },
-  { href: "/orchestrate", label: "Orchestrate" },
+  { href: "/workflows", label: "Workflows" },
   { href: "/runs", label: "Tasks" },
   { href: "/chat", label: "Chat" },
   { href: "/agents", label: "Agents" },
-  { href: "/workflows", label: "Workflows" },
   { href: "/channels", label: "Channels" },
 ];
 

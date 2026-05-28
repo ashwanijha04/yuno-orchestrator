@@ -42,7 +42,49 @@ def _is_synthetic(name: str) -> bool:
 
 @router.get("", response_model=list[WorkflowOut])
 async def list_workflows(session: AsyncSession = Depends(get_session)):
-    return [w for w in await WorkflowRepository(session).list() if not _is_synthetic(w.name)]
+    repo = WorkflowRepository(session)
+    workflows = [w for w in await repo.list() if not _is_synthetic(w.name)]
+    # Latest run status per workflow, in one query.
+    from app.db.models import Run
+
+    last: dict = {}
+    if workflows:
+        rows = (
+            await session.execute(
+                select(Run.workflow_id, Run.status, Run.started_at)
+                .where(Run.workflow_id.in_([w.id for w in workflows]))
+                .order_by(Run.started_at.desc())
+            )
+        ).all()
+        for wid, status, started in rows:
+            last.setdefault(wid, (status, started))
+
+    out: list[WorkflowOut] = []
+    for w in workflows:
+        item = WorkflowOut.model_validate(w)
+        graph = await repo.get_current_graph(w.id) or {}
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        item.node_count = len(nodes)
+        item.agent_count = sum(1 for n in nodes if n.get("type", "agent") == "agent")
+        badges: list[str] = []
+        tools = [n for n in nodes if n.get("type") == "tool"]
+        if any(str(n.get("tool", "")).startswith("mcp__") for n in tools):
+            badges.append("mcp")
+        if any(not str(n.get("tool", "")).startswith("mcp__") for n in tools):
+            badges.append("tools")
+        if any(n.get("type") == "human" for n in nodes):
+            badges.append("human")
+        if any(e.get("condition") for e in edges):
+            badges.append("branch")
+        if any(n.get("on_error") for n in nodes):
+            badges.append("error")
+        item.badges = badges
+        item.is_template = bool(w.template_id) or w.name.endswith("(demo)")
+        if w.id in last:
+            item.last_run_status, item.last_run_at = last[w.id]
+        out.append(item)
+    return out
 
 
 @router.delete("/{workflow_id}", status_code=204)

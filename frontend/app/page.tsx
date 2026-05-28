@@ -126,8 +126,8 @@ export default function Cockpit() {
               style={{ background: bridge ? "var(--color-status-completed)" : "var(--color-muted-foreground)" }} />
             <span className="text-[var(--color-muted-foreground)]">coding bridge {bridge ? "connected" : "offline"}</span>
           </span>
-          <Link href="/orchestrate" className="rounded-md border border-[var(--color-primary)] px-4 py-2 text-sm text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-foreground)]">
-            Orchestrate a task ▶
+          <Link href="/workflows/new" className="rounded-md border border-[var(--color-primary)] px-4 py-2 text-sm text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-foreground)]">
+            Build a workflow ▶
           </Link>
         </div>
       </div>
