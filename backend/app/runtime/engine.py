@@ -128,6 +128,8 @@ class RunEngine:
                 return {}  # pure routing; handled by outgoing conditional edges
             if node_type == "human":
                 return await self._run_human_node(run_id, node, state, approved_node)
+            if node_type == "tool":
+                return await self._run_tool_node(run_id, node, state)
             if node_type == "channel_out":
                 return await self._run_channel_out(run_id, node, state)
             # Stubbed node types (transform/parallel/channel_in).
@@ -228,6 +230,44 @@ class RunEngine:
         output_key = node.get("output_key")
         if output_key:
             update["artifacts"] = {output_key: result.content}
+        return update
+
+    async def _run_tool_node(self, run_id: uuid.UUID, node: dict, state: GraphState) -> dict:
+        """A deterministic tool-call node: invoke a tool (built-in or MCP) with
+        inputs resolved from state, persist the result, and store it as an artifact."""
+        node_id = node["id"]
+        tool_name = node.get("tool") or node.get("tool_id") or ""
+        # Resolve tool inputs: input_mapping {arg: "$.path"} or a literal tool_input dict.
+        tool_input: dict = {}
+        for k, ref in (node.get("input_mapping") or {}).items():
+            tool_input[k] = _resolve_ref(ref, state)
+        tool_input = {**(node.get("tool_input") or {}), **tool_input}
+
+        async with self.session_factory() as s:
+            step = await RunRepository(s).add_step(run_id, node_id=node_id, status="running")
+            step_id = step.id
+            await s.commit()
+        await publish_event(run_id, "step.started", {"node_id": node_id, "agent": tool_name, "step_id": str(step_id)})
+
+        result = await self.tool_runtime(tool_name, tool_input, {"run_id": str(run_id), "agent_id": None})
+        text = str(result.get("result") if isinstance(result, dict) and "result" in result else result.get("error") if isinstance(result, dict) else result)
+        failed = isinstance(result, dict) and "error" in result and "result" not in result
+
+        async with self.session_factory() as s:
+            repo = RunRepository(s)
+            await repo.add_message(run_id, role="tool", content=text, step_id=step_id, tool_calls=[{"name": tool_name, "input": tool_input}])
+            await repo.complete_step(step_id, status="failed" if failed else "completed", error=text if failed else None)
+            await s.commit()
+        await publish_event(run_id, "step.completed", {"node_id": node_id, "agent": tool_name, "step_id": str(step_id)})
+
+        update: dict = {
+            "current_agent": node_id,
+            "iteration_count": state.get("iteration_count", 0) + 1,
+            "messages": [{"role": "assistant", "content": text}],
+        }
+        output_key = node.get("output_key")
+        if output_key:
+            update["artifacts"] = {output_key: text}
         return update
 
     async def _run_channel_out(self, run_id: uuid.UUID, node: dict, state: GraphState) -> dict:
