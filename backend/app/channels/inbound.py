@@ -71,7 +71,13 @@ async def handle_inbound(inbound: InboundMessage, session_factory: async_session
             workflow_id=workflow_id,
             workflow_version=wf.current_version,
             trigger_type="channel",
-            trigger_payload={"channel_id": str(channel_id), "external_id": inbound.external_id, "text": inbound.content},
+            trigger_payload={
+                "channel_id": str(channel_id), "external_id": inbound.external_id, "text": inbound.content,
+                # Stable per-chat id so the engine loads prior turns -> the bot
+                # holds a coherent multi-turn conversation (and blends long-term
+                # memory for external-memory agents like Jarvis).
+                "conversation_id": f"tg:{channel_id}:{inbound.external_id}",
+            },
             initial_state={"variables": {"input": inbound.content, "message": inbound.content, "topic": inbound.content}},
         )
         await s.commit()
