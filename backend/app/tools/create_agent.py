@@ -14,8 +14,11 @@ from __future__ import annotations
 from app.db.repositories import AgentRepository
 from app.tools.base import ToolContext
 
-# Tools a spawned worker may hold; orchestration tools are deliberately excluded.
+# Tools a spawned worker may hold. Collaboration tools (list_agents,
+# send_message_to_agent) are always granted so it can work with teammates +
+# escalate to Jarvis; create_agent/run_debate stay excluded to avoid runaway spawning.
 _ALLOWED_WORKER_TOOLS = {"web_search", "http_request", "send_to_channel", "python_exec"}
+_COLLAB_TOOLS = ["list_agents", "send_message_to_agent"]
 _TASK_TYPES = {"coding", "normal", "conversation", "auto"}
 
 
@@ -33,7 +36,7 @@ class CreateAgentTool:
         if task_type not in _TASK_TYPES:
             task_type = "normal"
         requested = input.get("tool_ids") or []
-        tool_ids = [t for t in requested if t in _ALLOWED_WORKER_TOOLS]
+        tool_ids = sorted({*[t for t in requested if t in _ALLOWED_WORKER_TOOLS], *_COLLAB_TOOLS})
 
         async with ctx.session_factory() as s:
             repo = AgentRepository(s)

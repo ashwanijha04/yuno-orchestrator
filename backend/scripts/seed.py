@@ -211,7 +211,10 @@ async def main() -> None:
                 memory_policy={"strategy": "external"},
                 guardrails={"max_iterations": 6, "max_cost_per_run_usd": "0.50"}, harness={},
             )
-            agent = await agent_repo.create(**{**defaults, **spec})
+            merged = {**defaults, **spec}
+            # Every agent can collaborate: discover teammates + delegate/escalate.
+            merged["tool_ids"] = sorted({*(merged.get("tool_ids") or []), "list_agents", "send_message_to_agent"})
+            agent = await agent_repo.create(**merged)
             ids[spec["name"]] = str(agent.id)
             log.info("seed.agent.created", name=spec["name"])
 

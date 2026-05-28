@@ -36,4 +36,18 @@ def compose_system_prompt(agent: dict[str, Any]) -> str:
     if agent.get("system_prompt"):
         parts.append(f"# Instructions\n{agent['system_prompt']}")
 
+    # If this agent can collaborate, tell it so — so it actually reaches out to
+    # teammates and escalates instead of refusing work outside its lane.
+    tool_names = {t.get("name") for t in (agent.get("tool_schemas") or [])}
+    if "send_message_to_agent" in tool_names:
+        parts.append(
+            "# Working as a team\n"
+            "You're part of a team of agents. If a request needs information or work "
+            "outside your expertise, don't refuse — use `send_message_to_agent` to ask "
+            "the right teammate by their exact name (use `list_agents` to see who's "
+            "available), then use their reply. For anything big, ambiguous, or "
+            "cross-functional, escalate to `Jarvis` (the chief of staff). Collaborate "
+            "like a real colleague."
+        )
+
     return "\n\n".join(parts)
