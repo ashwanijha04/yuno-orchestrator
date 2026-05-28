@@ -167,8 +167,9 @@ export interface WorkflowGraph {
 
 export interface GraphNode {
   id: string;
-  type: string; // agent | condition | channel_out
+  type: string; // agent | tool | condition | human | channel_out
   agent_id?: string;
+  tool?: string; // for tool nodes: built-in or mcp__server__tool
   output_key?: string;
   input_mapping?: Record<string, string>;
   position?: { x: number; y: number };
