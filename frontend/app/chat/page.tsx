@@ -75,13 +75,6 @@ export default function ChatPage() {
     }
   }
 
-  function newConversation() {
-    if (!agentId) return;
-    if (typeof window !== "undefined") localStorage.removeItem(convKey(agentId));
-    setConversationId(undefined);
-    setTurns([]);
-  }
-
   const agent = agents.find((a) => a.id === agentId);
 
   return (
@@ -107,12 +100,6 @@ export default function ChatPage() {
             <p className="font-medium">{agent?.name ?? "Select an agent"}</p>
             {agent && <p className="truncate text-xs text-[var(--color-muted-foreground)]">{agent.role} · routing: {agent.task_type}</p>}
           </div>
-          {agent && turns.length > 0 && (
-            <button onClick={newConversation} title="Start a fresh conversation"
-              className="shrink-0 rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]">
-              ＋ New chat
-            </button>
-          )}
         </div>
 
         <div ref={scrollRef} className="flex-1 space-y-3 overflow-auto p-4">
