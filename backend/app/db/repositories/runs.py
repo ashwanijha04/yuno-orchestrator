@@ -40,10 +40,14 @@ class RunRepository:
     async def get(self, run_id: uuid.UUID) -> Run | None:
         return await self.session.get(Run, run_id)
 
-    async def list(self, limit: int = 50) -> Sequence[Run]:
-        result = await self.session.execute(
-            select(Run).order_by(Run.started_at.desc()).limit(limit)
-        )
+    async def list(self, limit: int = 50, top_level_only: bool = True) -> Sequence[Run]:
+        """Recent runs. By default only top-level master tasks — delegated and
+        debate sub-runs (which carry a parent_run_id) are nested inside their
+        parent's conversation, not listed as separate tasks."""
+        stmt = select(Run).order_by(Run.started_at.desc())
+        if top_level_only:
+            stmt = stmt.where(Run.trigger_payload["parent_run_id"].astext.is_(None))
+        result = await self.session.execute(stmt.limit(limit))
         return result.scalars().all()
 
     async def set_status(
