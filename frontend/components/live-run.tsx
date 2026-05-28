@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, type Approval, type RunDetail } from "@/lib/api";
 import { subscribeRun, type RunEvent } from "@/lib/ws";
 import { Markdown } from "@/components/markdown";
@@ -55,6 +56,8 @@ export function LiveRun({ runId }: { runId: string }) {
   const [liveStatus, setLiveStatus] = useState("pending");
   const [approval, setApproval] = useState<Approval | null>(null);
   const [busy, setBusy] = useState(false);
+  const [followInput, setFollowInput] = useState("");
+  const router = useRouter();
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = () => api.getRun(runId).then((r) => { setRun(r); setLiveStatus(r.status); }).catch(() => {});
@@ -78,6 +81,13 @@ export function LiveRun({ runId }: { runId: string }) {
   async function feedback(positive: boolean) {
     setBusy(true);
     try { await api.feedbackRun(runId, positive); await reload(); } finally { setBusy(false); }
+  }
+  async function followUp() {
+    const msg = followInput.trim();
+    if (!msg) return;
+    setBusy(true);
+    try { const r = await api.followupRun(runId, msg); setFollowInput(""); router.push(`/runs/${r.id}`); }
+    finally { setBusy(false); }
   }
 
   useEffect(() => {
@@ -113,6 +123,15 @@ export function LiveRun({ runId }: { runId: string }) {
   const memNote: Record<string, string> = {};
   (run?.messages ?? []).forEach((m) => {
     if (m.step_id && m.role === "system" && m.content.startsWith("🧠")) memNote[m.step_id] = m.content;
+  });
+  // Claude Code (coding_session) usage, detected from assistant tool calls.
+  const codingCalls: string[] = [];
+  (run?.messages ?? []).forEach((m) => {
+    if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
+      (m.tool_calls as { name?: string; input?: { task?: string } }[]).forEach((tc) => {
+        if (tc.name === "coding_session" && tc.input?.task) codingCalls.push(tc.input.task);
+      });
+    }
   });
 
   const agents = Array.from(new Set(run?.agent_names ?? []));
@@ -197,6 +216,37 @@ export function LiveRun({ runId }: { runId: string }) {
               {e.rationale ? ` · ${e.rationale.slice(0, 80)}` : ""}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Claude Code sessions run on the user's machine (coding_session) */}
+      {codingCalls.length > 0 && (
+        <div className="rounded-[var(--radius)] border border-[var(--color-status-paused)]/50 bg-[var(--color-card)] p-4">
+          <p className="mb-2 text-sm font-medium">🖥️ Claude Code <span className="text-xs font-normal text-[var(--color-muted-foreground)]">· ran on this machine</span></p>
+          <div className="space-y-1.5">
+            {codingCalls.map((t, i) => (
+              <div key={i} className="rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm">
+                <span className="font-mono text-xs text-[var(--color-status-paused)]">claude › </span>{t.slice(0, 240)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Follow up on a finished task — carries this task + result forward */}
+      {(status === "completed" || status === "failed") && (
+        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-3">
+          <p className="mb-2 text-xs text-[var(--color-muted-foreground)]">Follow up — continues from this result</p>
+          <div className="flex gap-2">
+            <input value={followInput} onChange={(e) => setFollowInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") followUp(); }}
+              placeholder="e.g. make it shorter, also add a chart…"
+              className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm outline-none focus:border-[var(--color-primary)]" />
+            <button onClick={followUp} disabled={busy || !followInput.trim()}
+              className="shrink-0 rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-foreground)] disabled:opacity-50">
+              Follow up ↵
+            </button>
+          </div>
         </div>
       )}
 

@@ -77,20 +77,20 @@ async def _get_or_create_coordinator(session: AsyncSession):
     )
 
 
-@router.post("", response_model=RunOut, status_code=201)
-async def orchestrate(body: OrchestrateRequest, session: AsyncSession = Depends(get_session)):
-    if not body.task.strip():
-        raise HTTPException(422, "task is required")
-
+async def start_orchestration(
+    session: AsyncSession, task: str, agent_ids: list[uuid.UUID], mode: str = "auto",
+    max_cost_usd: str | None = None, display_task: str | None = None,
+):
+    """Build + enqueue an orchestration run. `display_task` is a short label shown
+    in the UI while `task` (the full prompt) is what the coordinator actually reads
+    — used by follow-ups, which carry a long prior-context prompt."""
     agent_repo = AgentRepository(session)
-    agents = [a for a in [await agent_repo.get(aid) for aid in body.agent_ids] if a]
-    if body.mode == "pipeline" and not agents:
+    agents = [a for a in [await agent_repo.get(aid) for aid in agent_ids] if a]
+    if mode == "pipeline" and not agents:
         raise HTTPException(422, "pipeline mode needs at least one agent")
 
-    if body.mode == "auto":
+    if mode == "auto":
         coordinator = await _get_or_create_coordinator(session)
-        # If the user didn't pick agents, the orchestrator chooses from the whole
-        # roster itself (goal -> auto-plan -> delegate).
         if not agents:
             agents = [a for a in await agent_repo.list() if a.name != COORDINATOR_NAME]
         roster = "\n".join(f"- {a.name}: {a.role}" for a in agents) or "(no other agents available)"
@@ -102,7 +102,7 @@ async def orchestrate(body: OrchestrateRequest, session: AsyncSession = Depends(
                        "output_key": "result"}],
             "edges": [],
         }
-        variables = {"task": body.task, "roster": roster}
+        variables = {"task": task, "roster": roster}
     else:  # pipeline
         nodes, edges = [], []
         for i, a in enumerate(agents):
@@ -116,14 +116,15 @@ async def orchestrate(body: OrchestrateRequest, session: AsyncSession = Depends(
             "version": "1.0", "name": "Orchestration (pipeline)", "entry_node": "step0",
             "variables": {"task": {"type": "string"}}, "nodes": nodes, "edges": edges,
         }
-        variables = {"task": body.task}
+        variables = {"task": task}
 
+    label = display_task or task
     wf = await WorkflowRepository(session).create(
-        name=f"Orchestration · {uuid.uuid4().hex[:8]}", graph=graph, description=body.task[:200]
+        name=f"Orchestration · {uuid.uuid4().hex[:8]}", graph=graph, description=label[:200]
     )
-    trigger_payload: dict = {"task": body.task}
-    if body.max_cost_usd:
-        trigger_payload["max_cost_usd"] = body.max_cost_usd
+    trigger_payload: dict = {"task": label}
+    if max_cost_usd:
+        trigger_payload["max_cost_usd"] = max_cost_usd
     run = await RunRepository(session).create(
         workflow_id=wf.id, workflow_version=1, trigger_type="manual",
         trigger_payload=trigger_payload, initial_state={"variables": variables},
@@ -132,3 +133,10 @@ async def orchestrate(body: OrchestrateRequest, session: AsyncSession = Depends(
     await queue.ensure_group()
     await queue.enqueue_run(run.id)
     return run
+
+
+@router.post("", response_model=RunOut, status_code=201)
+async def orchestrate(body: OrchestrateRequest, session: AsyncSession = Depends(get_session)):
+    if not body.task.strip():
+        raise HTTPException(422, "task is required")
+    return await start_orchestration(session, body.task, body.agent_ids, body.mode, body.max_cost_usd)

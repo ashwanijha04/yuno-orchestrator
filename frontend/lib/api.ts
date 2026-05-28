@@ -226,6 +226,8 @@ export const api = {
   deleteRun: (id: string) => req<void>(`/runs/${id}`, { method: "DELETE" }),
   cancelRun: (id: string) => req<Run>(`/runs/${id}/cancel`, { method: "POST" }),
   evaluateRun: (id: string) => req<Evaluation>(`/runs/${id}/evaluate`, { method: "POST" }),
+  followupRun: (id: string, message: string) =>
+    req<Run>(`/runs/${id}/followup`, { method: "POST", body: JSON.stringify({ message }) }),
   feedbackRun: (id: string, positive: boolean, note?: string) =>
     req<Evaluation>(`/runs/${id}/feedback`, {
       method: "POST",

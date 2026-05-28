@@ -34,6 +34,10 @@ class FeedbackRequest(BaseModel):
     note: str | None = None
 
 
+class FollowupRequest(BaseModel):
+    message: str
+
+
 async def _run_output(session: AsyncSession, run_id: uuid.UUID) -> str | None:
     msgs = await RunRepository(session).messages_for_run(run_id)
     return next((m.content for m in reversed(msgs) if m.role == "assistant" and m.content.strip()), None)
@@ -152,6 +156,26 @@ async def feedback(run_id: uuid.UUID, body: FeedbackRequest, session: AsyncSessi
         positive=body.positive, note=body.note,
     )
     return ev
+
+
+@router.post("/{run_id}/followup", response_model=RunOut, status_code=201)
+async def followup(run_id: uuid.UUID, body: FollowupRequest, session: AsyncSession = Depends(get_session)):
+    """Continue a finished task: start a new orchestration that carries the prior
+    task + result forward as context, so you iterate instead of starting cold."""
+    run = await RunRepository(session).get(run_id)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    orig_task = _task_of(run)
+    orig_output = await _run_output(session, run_id)
+    combined = (
+        "This is a follow-up to an earlier task — build on it.\n\n"
+        f"EARLIER TASK:\n{orig_task or '(none)'}\n\n"
+        f"EARLIER RESULT:\n{(orig_output or '(none)')[:3000]}\n\n"
+        f"FOLLOW-UP REQUEST:\n{body.message}"
+    )
+    from app.api.orchestrate import start_orchestration
+
+    return await start_orchestration(session, combined, [], "auto", display_task=f"↳ {body.message}")
 
 
 @router.get("", response_model=list[RunOut])
