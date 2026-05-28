@@ -66,6 +66,18 @@ TOOL_DEFS: dict[str, ToolDef] = {
             "required": ["name", "role"],
         },
     ),
+    "coding_session": ToolDef(
+        "coding_session",
+        "Run a real Claude Code session on the user's machine to write/modify code for a concrete task. Returns what Claude Code did.",
+        {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Concrete coding task, e.g. 'add a /healthz endpoint to app.py'"},
+                "cwd": {"type": "string", "description": "Optional working directory on the host; defaults to the bridge's workspace"},
+            },
+            "required": ["task"],
+        },
+    ),
     "send_to_channel": ToolDef(
         "send_to_channel",
         "Send a message to an external channel (e.g. Telegram).",

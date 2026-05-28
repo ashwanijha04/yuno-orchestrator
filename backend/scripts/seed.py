@@ -87,7 +87,9 @@ JARVIS = {
         "- send_message_to_agent — hand a concrete subtask to an agent by its EXACT name; "
         "it runs that agent and returns the result.\n"
         "- run_debate — have 2–4 agents argue a topic over rounds (they see each other's "
-        "points); returns the transcript for you to judge.\n\n"
+        "points); returns the transcript for you to judge.\n"
+        "- coding_session — for a real coding task (write/modify code), spawn a Claude Code "
+        "session on the user's machine; it does the work and returns what it did.\n\n"
         "Choose the RIGHT approach for each request based on its complexity:\n"
         "• Simple/factual/chit-chat → just answer directly. Don't over-engineer.\n"
         "• A concrete multi-part job (build/research/write/plan X and Y) → reuse or "
@@ -110,7 +112,7 @@ JARVIS = {
     "model_provider": "openai",
     "model_name": "gpt-4o-mini",
     "task_type": "normal",
-    "tool_ids": ["list_agents", "create_agent", "send_message_to_agent", "run_debate"],
+    "tool_ids": ["list_agents", "create_agent", "send_message_to_agent", "run_debate", "coding_session"],
     "memory_policy": {"strategy": "external"},
     "guardrails": {"max_iterations": 12, "max_cost_per_run_usd": "0.50"},
 }
@@ -133,7 +135,7 @@ COMPANY = [
         "soul_md": "You are Devin. Pragmatic and precise. You ship working code and call out trade-offs honestly.",
         "persona": {"traits": ["pragmatic", "rigorous"], "tone": "technical"},
         "model_provider": "openai", "model_name": "gpt-4o-mini", "task_type": "coding",
-        "tool_ids": ["python_exec"],
+        "tool_ids": ["python_exec", "coding_session"],
     },
     {
         "name": "Mara the Marketer",

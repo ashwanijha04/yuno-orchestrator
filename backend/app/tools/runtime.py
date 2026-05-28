@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.logging import get_logger
 from app.tools.base import Tool, ToolContext
+from app.tools.coding import CodingSessionTool
 from app.tools.create_agent import CreateAgentTool
 from app.tools.debate import RunDebateTool
 from app.tools.http_request import HttpRequestTool
@@ -28,7 +29,7 @@ class ToolRuntime:
         impls: list[Tool] = [
             WebSearchTool(), HttpRequestTool(), SendToAgentTool(),
             SendToChannelTool(), PythonExecTool(),
-            CreateAgentTool(), ListAgentsTool(), RunDebateTool(),
+            CreateAgentTool(), ListAgentsTool(), RunDebateTool(), CodingSessionTool(),
         ]
         self.tools = {t.name: t for t in impls}
 
