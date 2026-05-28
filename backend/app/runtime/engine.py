@@ -437,11 +437,14 @@ class RunEngine:
                 return
             channel_id = run.trigger_payload.get("channel_id")
             external_id = run.trigger_payload.get("external_id")
-            artifacts = final.get("artifacts", {}) if final else {}
-            reply = list(artifacts.values())[-1] if artifacts else None
+            # Prefer the last non-empty assistant turn (a tool-call turn can leave
+            # a trailing empty assistant message); fall back to a non-empty artifact.
+            msgs = await RunRepository(s).messages_for_run(run_id)
+            reply = next((m.content for m in reversed(msgs) if m.role == "assistant" and (m.content or "").strip()), None)
             if not reply:
-                msgs = await RunRepository(s).messages_for_run(run_id)
-                reply = msgs[-1].content if msgs else None
+                artifacts = final.get("artifacts", {}) if final else {}
+                vals = [v for v in artifacts.values() if str(v).strip()]
+                reply = vals[-1] if vals else None
             if channel_id and external_id and reply:
                 s.add(OutboundMessage(
                     channel_id=uuid.UUID(channel_id), external_id=external_id,

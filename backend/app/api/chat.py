@@ -77,7 +77,9 @@ async def send(body: ChatRequest, session: AsyncSession = Depends(get_session)):
     async with SessionFactory() as s:
         repo = RunRepository(s)
         msgs = await repo.messages_for_run(run_id)
-        reply = next((m.content for m in reversed(msgs) if m.role == "assistant"), None)
+        # Last NON-EMPTY assistant turn — a tool-call turn can leave a trailing
+        # empty assistant message, which must not be returned as the reply.
+        reply = next((m.content for m in reversed(msgs) if m.role == "assistant" and (m.content or "").strip()), None)
         if reply is None:
             # Surface the real failure (e.g. provider quota/auth) instead of a blank.
             run = await repo.get(run_id)
