@@ -241,6 +241,9 @@ export const api = {
       body: JSON.stringify({ positive, note: note ?? null }),
     }),
   codingBridgeStatus: () => req<{ connected: boolean }>("/coding/status"),
+  codingApprovals: () => req<{ id: string; task: string; plan: string }[]>("/coding/approvals"),
+  decideCoding: (id: string, decision: "allow" | "deny") =>
+    req<{ ok: boolean }>(`/coding/${id}/decide`, { method: "POST", body: JSON.stringify({ decision }) }),
   listApprovals: () => req<Approval[]>("/approvals"),
   decideApproval: (id: string, decision: "approve" | "reject", note?: string) =>
     req<Approval>(`/approvals/${id}`, {

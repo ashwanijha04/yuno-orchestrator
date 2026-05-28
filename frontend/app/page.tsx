@@ -92,6 +92,7 @@ function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
 export default function Cockpit() {
   const [s, setS] = useState<Stats | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [coding, setCoding] = useState<{ id: string; task: string; plan: string }[]>([]);
   const [jarvis, setJarvis] = useState<string | null>(null);
   const [bridge, setBridge] = useState(false);
 
@@ -100,6 +101,7 @@ export default function Cockpit() {
     const load = () => {
       api.stats().then(setS).catch(() => {});
       api.listApprovals().then(setApprovals).catch(() => {});
+      api.codingApprovals().then(setCoding).catch(() => setCoding([]));
       api.codingBridgeStatus().then((b) => setBridge(b.connected)).catch(() => setBridge(false));
     };
     load();
@@ -110,6 +112,10 @@ export default function Cockpit() {
   async function decide(a: Approval, decision: "approve" | "reject") {
     await api.decideApproval(a.id, decision).catch(() => {});
     setApprovals((list) => list.filter((x) => x.id !== a.id));
+  }
+  async function decideCoding(id: string, decision: "allow" | "deny") {
+    await api.decideCoding(id, decision).catch(() => {});
+    setCoding((list) => list.filter((x) => x.id !== id));
   }
 
   return (
@@ -148,6 +154,22 @@ export default function Cockpit() {
       </div>
 
       <div className="h-[300px]"><MissionQueue /></div>
+
+      {coding.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-[var(--color-status-paused)]">🔐 Claude Code — approve the plan before it runs</p>
+          {coding.map((c) => (
+            <div key={c.id} className="rounded-[var(--radius)] border border-[var(--color-status-paused)] bg-[var(--color-card)] p-3">
+              <p className="text-sm font-medium">{c.task}</p>
+              <pre className="mt-1 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--color-background)] p-2 text-xs text-[var(--color-muted-foreground)]">{c.plan}</pre>
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => decideCoding(c.id, "allow")} className="rounded-md bg-[var(--color-status-completed)] px-3 py-1 text-xs font-medium text-[var(--color-primary-foreground)]">✓ Allow &amp; run</button>
+                <button onClick={() => decideCoding(c.id, "deny")} className="rounded-md border border-[var(--color-status-failed)] px-3 py-1 text-xs text-[var(--color-status-failed)]">✕ Deny</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {approvals.length > 0 && (
         <div className="space-y-2">

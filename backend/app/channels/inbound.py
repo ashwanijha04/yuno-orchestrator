@@ -56,6 +56,26 @@ async def handle_inbound(inbound: InboundMessage, session_factory: async_session
             await s.commit()
             return None
 
+        # /allow //deny resolve a pending coding-session plan for this chat.
+        cmd = inbound.content.strip().lower()
+        if cmd in ("/allow", "/deny", "allow", "deny"):
+            from app.redis_client import get_redis
+
+            r = get_redis()
+            akey = f"coding:awaiting_chat:{channel_id}:{inbound.external_id}"
+            sid = await r.get(akey)
+            if sid:
+                dec = "allow" if cmd in ("/allow", "allow") else "deny"
+                await r.hset(f"coding:session:{sid}", "decision", dec)
+                await r.lrem("coding:awaiting", 0, sid)
+                await r.delete(akey)
+                reply = "✅ Approved — running it now." if dec == "allow" else "🚫 Denied — nothing will change."
+            else:
+                reply = "Nothing is awaiting your approval right now."
+            s.add(OutboundMessage(channel_id=channel_id, external_id=inbound.external_id, content=reply, status="pending"))
+            await s.commit()
+            return None
+
         workflows = WorkflowRepository(s)
         workflow_id: uuid.UUID | None = binding.workflow_id
 

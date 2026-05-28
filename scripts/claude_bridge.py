@@ -75,11 +75,38 @@ def _summarize(ev: dict):
     return (None, None)
 
 
-def _run_claude(task: str, cwd: str, on_event=None) -> tuple[str, bool]:
+def _post(path: str, payload: dict) -> dict | None:
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(f"{API}{path}", data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read() or b"{}")
+    except Exception:
+        return None
+
+
+def _poll_decision(session_id: str, timeout: int = 900) -> str:
+    """Block until the plan is approved/denied (or time out → deny)."""
+    waited = 0
+    while waited < timeout:
+        time.sleep(2)
+        waited += 2
+        try:
+            with urllib.request.urlopen(f"{API}/coding/{session_id}", timeout=10) as r:
+                d = json.loads(r.read() or b"{}")
+            if d.get("decision") in ("allow", "deny"):
+                return d["decision"]
+        except Exception:
+            pass
+    return "deny"
+
+
+def _run_claude(task: str, cwd: str, permission_mode: str | None = None, on_event=None) -> tuple[str, bool]:
     workdir = os.path.expanduser(cwd) if cwd else WORKSPACE
     os.makedirs(workdir, exist_ok=True)
-    print(f"  ▶ claude in {workdir}: {task[:80]}", flush=True)
-    cmd = [CLAUDE, "-p", task, "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
+    print(f"  ▶ claude in {workdir} ({permission_mode or 'execute'}): {task[:80]}", flush=True)
+    cmd = [CLAUDE, "-p", task, "--output-format", "stream-json", "--verbose"]
+    cmd += ["--permission-mode", permission_mode] if permission_mode else ["--dangerously-skip-permissions"]
     try:
         proc = subprocess.Popen(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError:
@@ -110,8 +137,31 @@ def _run_claude(task: str, cwd: str, on_event=None) -> tuple[str, bool]:
     return (final, proc.returncode == 0)
 
 
+APPROVALS = os.environ.get("CODING_APPROVALS", "plan")  # "plan" (review first) | "off"
+
+
+def _handle(job: dict) -> None:
+    sid, task, cwd = job["id"], job.get("task", ""), job.get("cwd", "")
+    if APPROVALS != "off":
+        # Plan first (no execution), get it approved, then execute.
+        plan, ok = _run_claude(task, cwd, permission_mode="plan")
+        if not ok:
+            _post_result(sid, plan, False)
+            return
+        print("  ⏸ plan ready — awaiting approval", flush=True)
+        _post(f"/coding/{sid}/plan", {"plan": plan})
+        if _poll_decision(sid) != "allow":
+            _post_result(sid, "Plan was not approved — nothing was changed.", True)
+            print("  ✗ denied", flush=True)
+            return
+        print("  ✓ approved — executing", flush=True)
+    result, ok = _run_claude(task, cwd)  # execute (skip-permissions)
+    _post_result(sid, result, ok)
+    print(f"  ✓ posted ({'ok' if ok else 'failed'}, {len(result)} chars)", flush=True)
+
+
 def main() -> None:
-    print(f"Claude bridge → {API}  ·  workspace {WORKSPACE}")
+    print(f"Claude bridge → {API}  ·  workspace {WORKSPACE}  ·  approvals: {APPROVALS}")
     print("Waiting for coding jobs… (Ctrl-C to stop)")
     while True:
         job = _claim()
@@ -119,9 +169,7 @@ def main() -> None:
             time.sleep(2)
             continue
         print(f"• job {job['id']}")
-        result, ok = _run_claude(job.get("task", ""), job.get("cwd", ""))
-        _post_result(job["id"], result, ok)
-        print(f"  ✓ posted ({'ok' if ok else 'failed'}, {len(result)} chars)")
+        _handle(job)
 
 
 if __name__ == "__main__":

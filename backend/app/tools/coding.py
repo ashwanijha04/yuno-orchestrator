@@ -48,9 +48,21 @@ class CodingSessionTool:
         if not await r.exists(SEEN):
             return {"error": _NO_BRIDGE_HINT}
 
+        # If this was triggered from a chat channel (e.g. Telegram), record where to
+        # ask for plan approval.
+        notify: dict = {}
+        if ctx.run_id is not None:
+            from app.db.repositories import RunRepository
+
+            async with ctx.session_factory() as s:
+                run = await RunRepository(s).get(ctx.run_id)
+                tp = (run.trigger_payload or {}) if run else {}
+                if tp.get("channel_id") and tp.get("external_id"):
+                    notify = {"notify_channel": tp["channel_id"], "notify_external": tp["external_id"]}
+
         sid = uuid.uuid4().hex
         key = f"coding:session:{sid}"
-        await r.hset(key, mapping={"task": task, "cwd": cwd, "status": "pending", "result": ""})
+        await r.hset(key, mapping={"task": task, "cwd": cwd, "status": "pending", "result": "", **notify})
         await r.expire(key, 3600)
         await r.rpush(PENDING, sid)
 
