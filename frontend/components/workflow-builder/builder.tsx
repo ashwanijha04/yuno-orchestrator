@@ -43,7 +43,32 @@ type ToolNodeData = {
   isEntry?: boolean;
   isTool: true;
 };
+type LogicNodeData = {
+  kind: "human" | "condition";
+  label: string;
+  onError?: string;
+  isEntry?: boolean;
+  isLogic: true;
+};
 type EdgeData = { condition?: string; priority?: number };
+
+function LogicNode({ data, selected }: NodeProps) {
+  const d = data as LogicNodeData;
+  const human = d.kind === "human";
+  const accent = human ? "var(--color-status-paused)" : "var(--color-status-running)";
+  return (
+    <div className="min-w-40 rounded-[var(--radius)] border bg-[var(--color-card)] px-3 py-2 shadow-md"
+      style={{ borderColor: selected ? "var(--color-primary)" : accent }}>
+      <Handle type="target" position={Position.Top} style={{ background: "var(--color-muted-foreground)" }} />
+      <div className="flex items-center gap-2">
+        {d.isEntry && <span className="rounded bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] text-[var(--color-primary-foreground)]">ENTRY</span>}
+        <span className="text-sm font-medium" style={{ color: accent }}>{human ? "⏸ Human approval" : "🔀 Condition"}</span>
+      </div>
+      {d.label && <div className="mt-0.5 text-xs text-[var(--color-muted-foreground)]">{d.label}</div>}
+      <Handle type="source" position={Position.Bottom} style={{ background: "var(--color-primary)" }} />
+    </div>
+  );
+}
 
 function ToolNode({ data, selected }: NodeProps) {
   const d = data as ToolNodeData;
@@ -84,10 +109,10 @@ function AgentNode({ data, selected }: NodeProps) {
   );
 }
 
-const nodeTypes = { agent: AgentNode, tool: ToolNode };
+const nodeTypes = { agent: AgentNode, tool: ToolNode, human: LogicNode, condition: LogicNode };
 
 function nodeLabel(n: Node): string {
-  const d = n.data as Partial<AgentNodeData & ToolNodeData>;
+  const d = n.data as Partial<AgentNodeData & ToolNodeData & LogicNodeData>;
   return d.agentName || d.label || n.id;
 }
 
@@ -102,6 +127,7 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tools, setTools] = useState<Tool[]>([]);
+  const [agentQuery, setAgentQuery] = useState("");
   const [name, setName] = useState(initialName ?? "");
   const [description, setDescription] = useState(initialDescription ?? "");
   const [variables, setVariables] = useState<string>(
@@ -120,6 +146,12 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
         id: n.id, type: "tool", position: n.position ?? { x: 80, y: 80 },
         data: { tool: n.tool ?? "", label: n.label ?? n.id, outputKey: n.output_key,
                 inputMapping: JSON.stringify(n.input_mapping ?? {}), onError: n.on_error, isEntry, isTool: true } as ToolNodeData,
+      } as Node;
+    }
+    if (n.type === "human" || n.type === "condition") {
+      return {
+        id: n.id, type: n.type, position: n.position ?? { x: 80, y: 80 },
+        data: { kind: n.type, label: n.label ?? "", onError: n.on_error, isEntry, isLogic: true } as LogicNodeData,
       } as Node;
     }
     return {
@@ -194,6 +226,19 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
     if (isFirst) setEntryId(id);
   }
 
+  function addLogicNode(kind: "human" | "condition") {
+    const id = `${kind}-${counter}`;
+    setCounter((c) => c + 1);
+    const isFirst = nodes.length === 0;
+    const node: Node = {
+      id, type: kind,
+      position: { x: 120 + Math.random() * 240, y: 80 + nodes.length * 110 },
+      data: { kind, label: kind === "human" ? "Approve to continue" : "", isEntry: isFirst, isLogic: true } as LogicNodeData,
+    };
+    setNodes((ns: Node[]) => [...ns, node]);
+    if (isFirst) setEntryId(id);
+  }
+
   function buildGraph(): WorkflowGraph {
     const vars: Record<string, unknown> = {};
     variables.split(",").map((s) => s.trim()).filter(Boolean).forEach((v) => (vars[v] = { type: "string" }));
@@ -209,6 +254,10 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
           let im: Record<string, string> = {};
           try { im = JSON.parse(d.inputMapping || "{}"); } catch { im = {}; }
           return { id: n.id, type: "tool", tool: d.tool, output_key: d.outputKey, input_mapping: im, on_error: d.onError || undefined, label: d.label, position: pos };
+        }
+        if (n.type === "human" || n.type === "condition") {
+          const d = n.data as LogicNodeData;
+          return { id: n.id, type: n.type, label: d.label || undefined, on_error: d.onError || undefined, position: pos };
         }
         const d = n.data as AgentNodeData;
         return { id: n.id, type: "agent", agent_id: d.agentId, output_key: d.outputKey, on_error: d.onError || undefined, label: d.agentName, position: pos };
@@ -260,6 +309,20 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
   const selectedNode = nodes.find((n: Node) => n.id === selNode);
   const selectedEdge = edges.find((e: Edge) => e.id === selEdge);
 
+  // Display-only red dashed edges for on_error routes (saved on the node, not as
+  // real edges). Recomputed from node data; excluded from buildGraph.
+  const errorEdges: Edge[] = nodes
+    .map((n: Node) => ({ n, oe: (n.data as { onError?: string }).onError }))
+    .filter(({ oe }) => !!oe)
+    .map(({ n, oe }) => ({
+      id: `err-${n.id}`, source: n.id, target: oe as string, label: "on error",
+      animated: true, deletable: false, selectable: false, zIndex: 0,
+      style: { stroke: "var(--color-status-failed)", strokeWidth: 1.5, strokeDasharray: "5 5" },
+      labelStyle: { fill: "var(--color-status-failed)", fontSize: 10 },
+      labelBgStyle: { fill: "var(--color-background)" },
+    }));
+  const displayEdges: Edge[] = [...edges, ...errorEdges];
+
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -283,18 +346,26 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
       )}
 
       <div className="flex flex-1 gap-3 overflow-hidden">
-        <div className="w-56 shrink-0 overflow-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-3">
-          <p className="mb-2 text-xs font-medium text-[var(--color-muted-foreground)]">Agents — click to add</p>
-          <div className="space-y-2">
-            {agents.map((a) => (
+        <div className="flex w-60 shrink-0 flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]">
+          <div className="border-b border-[var(--color-border)] p-3">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-muted-foreground)]">Palette · click to add</p>
+            <input value={agentQuery} onChange={(e) => setAgentQuery(e.target.value)} placeholder="Search agents…"
+              className="mt-2 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-background)] px-2.5 py-1.5 text-xs outline-none focus:border-[var(--color-primary)]" />
+          </div>
+          <div className="flex-1 overflow-auto p-3">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-[var(--color-muted-foreground)]">🤖 Agents</p>
+          <div className="max-h-64 space-y-2 overflow-auto pr-1">
+            {agents
+              .filter((a) => `${a.name} ${a.role}`.toLowerCase().includes(agentQuery.toLowerCase()))
+              .map((a) => (
               <button key={a.id} onClick={() => addAgentNode(a)}
                 className="block w-full rounded-md border border-[var(--color-border)] p-2 text-left text-sm hover:border-[var(--color-primary)]">
                 <div className="font-medium">{a.name}</div>
-                <div className="text-xs text-[var(--color-muted-foreground)]">{a.role}</div>
+                <div className="line-clamp-1 text-xs text-[var(--color-muted-foreground)]">{a.role}</div>
               </button>
             ))}
           </div>
-          <p className="mb-2 mt-4 text-xs font-medium text-[var(--color-muted-foreground)]">Tools &amp; MCP — click to add</p>
+          <p className="mb-2 mt-4 flex items-center gap-1.5 text-xs font-medium text-[var(--color-muted-foreground)]">🔧 Tools &amp; MCP</p>
           <div className="space-y-2">
             {tools.length === 0 && <p className="text-[10px] text-[var(--color-muted-foreground)]">No tools available.</p>}
             {tools.map((t) => {
@@ -313,27 +384,43 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
               );
             })}
           </div>
+          <p className="mb-2 mt-4 text-xs font-medium text-[var(--color-muted-foreground)]">Logic — click to add</p>
+          <div className="space-y-2">
+            <button onClick={() => addLogicNode("human")}
+              className="block w-full rounded-md border border-[var(--color-border)] p-2 text-left text-sm hover:border-[var(--color-status-paused)]">
+              <span className="font-medium">⏸ Human approval</span>
+              <span className="block text-[10px] text-[var(--color-muted-foreground)]">pause for sign-off, resume on approve</span>
+            </button>
+            <button onClick={() => addLogicNode("condition")}
+              className="block w-full rounded-md border border-[var(--color-border)] p-2 text-left text-sm hover:border-[var(--color-status-running)]">
+              <span className="font-medium">🔀 Condition</span>
+              <span className="block text-[10px] text-[var(--color-muted-foreground)]">branch on a rule (set conditions on its edges)</span>
+            </button>
+          </div>
           <p className="mt-3 text-[10px] text-[var(--color-muted-foreground)]">
-            Connect nodes via the bottom→top handles. Click an edge to add a condition (e.g. <code>iteration_count &lt; 3</code>) — point an edge back to an earlier node for a feedback loop.
+            Connect nodes via the bottom→top handles. Click an edge to add a condition (e.g. <code>iteration_count &lt; 3</code>) — point an edge back to an earlier node for a feedback loop. A node&apos;s <span className="text-[var(--color-status-failed)]">on-failure</span> route shows as a red dashed edge.
           </p>
+          </div>
         </div>
 
         <div className="flex-1 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={displayEdges}
             onNodesChange={(c: NodeChange[]) => onNodesChange(c)}
-            onEdgesChange={(c: EdgeChange[]) => onEdgesChange(c)}
+            onEdgesChange={(c: EdgeChange[]) => onEdgesChange(c.filter((ch) => !("id" in ch) || !String((ch as { id?: string }).id ?? "").startsWith("err-")))}
             onConnect={onConnect}
             nodeTypes={nodeTypes}
             onNodeClick={(_e, n: Node) => { setSelNode(n.id); setSelEdge(null); }}
-            onEdgeClick={(_e, ed: Edge) => { setSelEdge(ed.id); setSelNode(null); }}
+            onEdgeClick={(_e, ed: Edge) => { if (!ed.id.startsWith("err-")) { setSelEdge(ed.id); setSelNode(null); } }}
+            defaultEdgeOptions={{ style: { stroke: "var(--color-muted-foreground)" } }}
             fitView
             colorMode="dark"
+            proOptions={{ hideAttribution: true }}
           >
-            <Background />
+            <Background gap={20} size={1} color="var(--color-border)" />
             <Controls />
-            <MiniMap pannable zoomable />
+            <MiniMap pannable zoomable className="!bg-[var(--color-card)]" />
           </ReactFlow>
         </div>
 
@@ -372,7 +459,34 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
               <button onClick={() => deleteNode(selectedNode.id)} className="w-full rounded-md border border-[var(--color-status-failed)] px-2 py-1.5 text-sm text-[var(--color-status-failed)]">Delete node</button>
             </div>
           )}
-          {selectedNode && selectedNode.type !== "tool" && (
+          {selectedNode && (selectedNode.type === "human" || selectedNode.type === "condition") && (
+            <div className="space-y-3">
+              <p className="text-sm font-semibold">{selectedNode.type === "human" ? "⏸ Human approval" : "🔀 Condition"}</p>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">
+                  {selectedNode.type === "human" ? "Prompt shown when it pauses" : "Label"}
+                </label>
+                <input className={FIELD} value={(selectedNode.data as LogicNodeData).label ?? ""}
+                  onChange={(e) => setNodes((ns: Node[]) => ns.map((n: Node) => n.id === selectedNode.id ? { ...n, data: { ...(n.data as LogicNodeData), label: e.target.value } } : n))} />
+              </div>
+              {selectedNode.type === "condition" && (
+                <p className="text-[10px] text-[var(--color-muted-foreground)]">Branches are set on this node&apos;s outgoing edges — click an edge to add a condition.</p>
+              )}
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">On failure → route to</label>
+                <select className={FIELD} value={(selectedNode.data as LogicNodeData).onError ?? ""}
+                  onChange={(e) => setNodes((ns: Node[]) => ns.map((n: Node) => n.id === selectedNode.id ? { ...n, data: { ...(n.data as LogicNodeData), onError: e.target.value || undefined } } : n))}>
+                  <option value="">— fail the run —</option>
+                  {nodes.filter((n) => n.id !== selectedNode.id).map((n) => (
+                    <option key={n.id} value={n.id}>{nodeLabel(n)}</option>
+                  ))}
+                </select>
+              </div>
+              <button onClick={() => setEntry(selectedNode.id)} className="w-full rounded-md border border-[var(--color-border)] px-2 py-1.5 text-sm">Set as entry node</button>
+              <button onClick={() => deleteNode(selectedNode.id)} className="w-full rounded-md border border-[var(--color-status-failed)] px-2 py-1.5 text-sm text-[var(--color-status-failed)]">Delete node</button>
+            </div>
+          )}
+          {selectedNode && selectedNode.type !== "tool" && selectedNode.type !== "human" && selectedNode.type !== "condition" && (
             <div className="space-y-3">
               <p className="text-sm font-semibold">{(selectedNode.data as AgentNodeData).agentName}</p>
               <div>

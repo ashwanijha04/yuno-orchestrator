@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api, type Agent, type RunDetail } from "@/lib/api";
 
 type Live = {
+  id: string;
   task: string | null;
   status: string;
   activeNow: Set<string>;
@@ -47,7 +49,7 @@ export function AgentConstellation() {
           .map((m) => (Array.isArray(m.tool_calls) ? (m.tool_calls[0] as { name?: string })?.name : undefined))
           .filter((n): n is string => !!n && !COORDINATION.has(n));
         const running = d.status === "running" || d.status === "pending";
-        setLive({ task: d.task, status: d.status, activeNow, done, coordinatorBusy: running && activeNow.size === 0, recalled, tools });
+        setLive({ id: d.id, task: d.task, status: d.status, activeNow, done, coordinatorBusy: running && activeNow.size === 0, recalled, tools });
       } catch { /* ignore */ }
     };
     tick();
@@ -131,10 +133,16 @@ export function AgentConstellation() {
 
       {/* status strip: mode + memory recalls + latest real tool/MCP call */}
       <div className="shrink-0 space-y-1 px-1 pt-1 text-xs">
-        <p className="truncate text-[var(--color-muted-foreground)]">
-          <span className={hubLive ? "text-[var(--color-status-running)]" : ""}>{caption}</span>
-          {live?.task ? <span className="text-[var(--color-foreground)]"> · {live.task.slice(0, 60)}</span> : null}
-        </p>
+        {live ? (
+          <Link href={`/runs/${live.id}`} className="block truncate text-[var(--color-muted-foreground)] hover:underline"
+            title="Open this task (to view or stop it)">
+            <span className={hubLive ? "text-[var(--color-status-running)]" : ""}>{caption}</span>
+            {live.task ? <span className="text-[var(--color-foreground)]"> · {live.task.slice(0, 60)}</span> : null}
+            {hubLive ? <span className="text-[var(--color-muted-foreground)]"> · open to stop →</span> : null}
+          </Link>
+        ) : (
+          <p className="truncate text-[var(--color-muted-foreground)]">{caption}</p>
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
           {idleHidden > 0 && (
             <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[var(--color-muted-foreground)]">+{idleHidden} idle</span>
