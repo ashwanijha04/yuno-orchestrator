@@ -94,6 +94,11 @@ class RunEngine:
             final = await compiled.ainvoke(
                 start_state, config={"recursion_limit": recursion_limit_for(graph)}
             )
+            # If the user cancelled while the (single, long) node was running, honour
+            # it — don't overwrite 'cancelled' with 'completed'.
+            if await self._is_cancelled(run_id):
+                await publish_event(run_id, "run.cancelled", {})
+                return "cancelled"
             await self._finalize(run_id, "completed", final_state=_serializable(final))
             await self._maybe_auto_reply(run_id, final)
             await publish_event(run_id, "run.completed", {})
