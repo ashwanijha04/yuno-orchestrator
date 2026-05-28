@@ -198,12 +198,28 @@ async def list_runs(session: AsyncSession = Depends(get_session)):
         ).all()
         for rid, overall, _ in ev_rows:
             quality.setdefault(rid, overall)  # first seen = most recent
+    # Which runs actually did work (delegation/tool/coding messages)? A plain chat
+    # reply has none → it's conversational, not a "mission".
+    worked: set = set()
+    if runs:
+        from app.db.models import Message
+
+        rows = (
+            await session.execute(
+                select(Message.run_id).where(
+                    Message.run_id.in_({r.id for r in runs}), Message.role.in_(("agent", "tool"))
+                )
+            )
+        ).all()
+        worked = {rid for (rid,) in rows}
     out = []
     for r in runs:
         item = RunOut.model_validate(r)
         item.workflow_name = names.get(r.workflow_id)
         item.task = _task_of(r)
         item.quality = quality.get(r.id)
+        is_chat = r.trigger_type == "channel" or bool((r.trigger_payload or {}).get("conversation_id"))
+        item.conversational = is_chat and r.id not in worked
         out.append(item)
     return out
 

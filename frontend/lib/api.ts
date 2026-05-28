@@ -46,6 +46,7 @@ export interface Run {
   task: string | null;
   agent_names: string[];
   quality: string | null; // latest judge score 0..1
+  conversational: boolean; // plain chat reply — not a mission/task
 }
 
 export interface Step {

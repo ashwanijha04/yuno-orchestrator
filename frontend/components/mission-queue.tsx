@@ -23,7 +23,8 @@ export function MissionQueue() {
   useEffect(() => {
     const load = () =>
       api.listRuns()
-        .then((all) => setRuns(all.filter((r) => r.trigger_type !== "agent"))) // drop delegated sub-runs
+        // drop delegated sub-runs + plain chat replies (only real missions here)
+        .then((all) => setRuns(all.filter((r) => r.trigger_type !== "agent" && !r.conversational)))
         .catch(() => {});
     load();
     const t = setInterval(load, 2500);

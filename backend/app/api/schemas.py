@@ -175,6 +175,7 @@ class RunOut(BaseModel):
     task: str | None = None
     agent_names: list[str] = Field(default_factory=list)
     quality: Decimal | None = None  # latest evaluation's overall score (0..1)
+    conversational: bool = False  # a plain chat reply (no delegation/tools) — not a "mission"
 
     model_config = {"from_attributes": True}
 

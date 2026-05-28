@@ -23,7 +23,8 @@ function ago(iso: string): string {
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[]>([]);
 
-  const load = () => api.listRuns().then(setRuns).catch(() => {});
+  // Tasks = real missions; plain chat replies live in the Chat tab.
+  const load = () => api.listRuns().then((all) => setRuns(all.filter((r) => !r.conversational))).catch(() => {});
   useEffect(() => {
     load();
     const t = setInterval(load, 3000);
