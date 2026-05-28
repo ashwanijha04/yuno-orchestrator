@@ -122,18 +122,28 @@ class RunEngine:
             if await self._is_cancelled(run_id):
                 raise RunCancelled()
             node_type = node.get("type", "agent")
-            if node_type == "agent":
-                return await self._run_agent_node(run_id, node, state, agents)
-            if node_type == "condition":
-                return {}  # pure routing; handled by outgoing conditional edges
-            if node_type == "human":
-                return await self._run_human_node(run_id, node, state, approved_node)
-            if node_type == "tool":
-                return await self._run_tool_node(run_id, node, state)
-            if node_type == "channel_out":
-                return await self._run_channel_out(run_id, node, state)
-            # Stubbed node types (transform/parallel/channel_in).
-            return {"metadata": {f"skipped_{node['id']}": node_type}}
+            try:
+                if node_type == "agent":
+                    return await self._run_agent_node(run_id, node, state, agents)
+                if node_type == "condition":
+                    return {}  # pure routing; handled by outgoing conditional edges
+                if node_type == "human":
+                    return await self._run_human_node(run_id, node, state, approved_node)
+                if node_type == "tool":
+                    return await self._run_tool_node(run_id, node, state)
+                if node_type == "channel_out":
+                    return await self._run_channel_out(run_id, node, state)
+                # Stubbed node types (transform/parallel/channel_in).
+                return {"metadata": {f"skipped_{node['id']}": node_type}}
+            except (RunCancelled, RunPaused):
+                raise
+            except Exception as exc:  # noqa: BLE001
+                # If the node declares an on_error handler, record the failure and
+                # let the router divert there; otherwise let it fail the run.
+                if node.get("on_error"):
+                    log.warning("node.error_routed", node=node["id"], detail=str(exc))
+                    return {"errors": {node["id"]: str(exc)}}
+                raise
 
         return node_runner
 
@@ -230,6 +240,8 @@ class RunEngine:
         output_key = node.get("output_key")
         if output_key:
             update["artifacts"] = {output_key: result.content}
+        if status == "failed":  # soft failure -> routable via on_error
+            update["errors"] = {node_id: result.blocked_reason or "agent failed"}
         return update
 
     async def _run_tool_node(self, run_id: uuid.UUID, node: dict, state: GraphState) -> dict:
@@ -268,6 +280,8 @@ class RunEngine:
         output_key = node.get("output_key")
         if output_key:
             update["artifacts"] = {output_key: text}
+        if failed:  # tool errored -> routable via on_error
+            update["errors"] = {node_id: text}
         return update
 
     async def _run_channel_out(self, run_id: uuid.UUID, node: dict, state: GraphState) -> dict:

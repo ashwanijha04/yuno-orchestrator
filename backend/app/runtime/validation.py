@@ -34,7 +34,8 @@ def validate_graph(graph: dict, known_agent_ids: set[str] | None = None) -> list
     elif entry not in node_ids:
         issues.append(ValidationIssue("bad_entry", f"entry_node {entry!r} does not exist"))
 
-    # Agent nodes must reference an existing agent (when a registry is supplied).
+    # Agent nodes must reference an existing agent (when a registry is supplied);
+    # on_error handlers must point at a real node.
     for n in nodes:
         if n.get("type") == "agent" and known_agent_ids is not None:
             aid = str(n.get("agent_id"))
@@ -42,6 +43,11 @@ def validate_graph(graph: dict, known_agent_ids: set[str] | None = None) -> list
                 issues.append(
                     ValidationIssue("unknown_agent", f"node {n['id']!r} references unknown agent {aid!r}", node_id=n["id"])
                 )
+        oe = n.get("on_error")
+        if oe and oe not in node_ids:
+            issues.append(
+                ValidationIssue("bad_on_error", f"node {n['id']!r} on_error target {oe!r} does not exist", node_id=n["id"])
+            )
 
     # Edge endpoints must exist; conditions must parse and reference known state.
     edges_by_source: dict[str, list[dict]] = defaultdict(list)
@@ -80,9 +86,9 @@ def validate_graph(graph: dict, known_agent_ids: set[str] | None = None) -> list
                     ValidationIssue("priority_overlap", f"node {source!r} has {count} conditional edges at priority {prio}", node_id=source)
                 )
 
-    # Reachability from entry.
+    # Reachability from entry (following normal edges + on_error handlers).
     if entry in node_ids:
-        reachable = _reachable(entry, edges_by_source)
+        reachable = _reachable(entry, edges_by_source, node_by_id)
         for n in nodes:
             if n["id"] not in reachable:
                 issues.append(ValidationIssue("unreachable", f"node {n['id']!r} is unreachable from entry", node_id=n["id"]))
@@ -97,7 +103,7 @@ def validate_graph(graph: dict, known_agent_ids: set[str] | None = None) -> list
     return issues
 
 
-def _reachable(entry: str, edges_by_source: dict[str, list[dict]]) -> set[str]:
+def _reachable(entry: str, edges_by_source: dict[str, list[dict]], node_by_id: dict[str, dict]) -> set[str]:
     seen: set[str] = set()
     stack = [entry]
     while stack:
@@ -107,6 +113,9 @@ def _reachable(entry: str, edges_by_source: dict[str, list[dict]]) -> set[str]:
         seen.add(cur)
         for e in edges_by_source.get(cur, []):
             stack.append(e["to"])
+        on_error = (node_by_id.get(cur) or {}).get("on_error")
+        if on_error:
+            stack.append(on_error)
     return seen
 
 

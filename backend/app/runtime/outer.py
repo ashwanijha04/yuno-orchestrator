@@ -21,10 +21,14 @@ from app.runtime.state import GraphState, build_eval_context
 NodeRunner = Callable[[dict, GraphState], Awaitable[dict]]
 
 
-def _make_router(edges: list[dict]):
+def _make_router(node_id: str, edges: list[dict], on_error: str | None):
     ordered = sorted(edges, key=lambda e: e.get("priority", 1_000_000))
 
     def router(state: GraphState) -> str:
+        # Failure routing wins: if this node recorded an error, divert to its
+        # on_error handler instead of the normal edges.
+        if on_error and (state.get("errors") or {}).get(node_id):
+            return on_error
         ctx = build_eval_context(state)
         for edge in ordered:
             cond = edge.get("condition")
@@ -56,14 +60,21 @@ def build_outer_graph(graph: dict, node_runner: NodeRunner, entry_override: str 
     for node in graph["nodes"]:
         node_id = node["id"]
         outs = edges_by_source.get(node_id, [])
-        if not outs:
+        on_error = node.get("on_error")
+        # A plain unconditional edge stays plain; anything with branching, a
+        # condition, or an on_error handler routes through the dynamic router.
+        needs_router = bool(on_error) or len(outs) > 1 or (len(outs) == 1 and outs[0].get("condition"))
+        if not outs and not on_error:
             builder.add_edge(node_id, END)
-        elif len(outs) == 1 and not outs[0].get("condition"):
+        elif not needs_router:
             builder.add_edge(node_id, outs[0]["to"])
         else:
-            mapping = {e["to"]: e["to"] for e in outs}
+            targets = {e["to"] for e in outs}
+            if on_error:
+                targets.add(on_error)
+            mapping = {t: t for t in targets}
             mapping[END] = END
-            builder.add_conditional_edges(node_id, _make_router(outs), mapping)
+            builder.add_conditional_edges(node_id, _make_router(node_id, outs, on_error), mapping)
 
     # On resume, re-enter at the paused node instead of the workflow's entry.
     builder.set_entry_point(entry_override or graph["entry_node"])

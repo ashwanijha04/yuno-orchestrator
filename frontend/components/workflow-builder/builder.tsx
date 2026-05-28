@@ -31,6 +31,7 @@ type AgentNodeData = {
   agentName: string;
   role: string;
   outputKey?: string;
+  onError?: string;
   isEntry?: boolean;
 };
 type ToolNodeData = {
@@ -38,6 +39,7 @@ type ToolNodeData = {
   label: string;
   outputKey?: string;
   inputMapping?: string; // JSON string, e.g. {"expression":"$.variables.expr"}
+  onError?: string;
   isEntry?: boolean;
   isTool: true;
 };
@@ -84,6 +86,11 @@ function AgentNode({ data, selected }: NodeProps) {
 
 const nodeTypes = { agent: AgentNode, tool: ToolNode };
 
+function nodeLabel(n: Node): string {
+  const d = n.data as Partial<AgentNodeData & ToolNodeData>;
+  return d.agentName || d.label || n.id;
+}
+
 export interface BuilderProps {
   workflowId?: string;
   initialName?: string;
@@ -112,12 +119,12 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
       return {
         id: n.id, type: "tool", position: n.position ?? { x: 80, y: 80 },
         data: { tool: n.tool ?? "", label: n.label ?? n.id, outputKey: n.output_key,
-                inputMapping: JSON.stringify(n.input_mapping ?? {}), isEntry, isTool: true } as ToolNodeData,
+                inputMapping: JSON.stringify(n.input_mapping ?? {}), onError: n.on_error, isEntry, isTool: true } as ToolNodeData,
       } as Node;
     }
     return {
       id: n.id, type: "agent", position: n.position ?? { x: 80, y: 80 },
-      data: { agentId: n.agent_id ?? "", agentName: n.label ?? n.id, role: "", outputKey: n.output_key, isEntry },
+      data: { agentId: n.agent_id ?? "", agentName: n.label ?? n.id, role: "", outputKey: n.output_key, onError: n.on_error, isEntry },
     } as Node;
   });
   const initialEdges: Edge[] = (initialGraph?.edges ?? []).map((e) => ({
@@ -201,10 +208,10 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
           const d = n.data as ToolNodeData;
           let im: Record<string, string> = {};
           try { im = JSON.parse(d.inputMapping || "{}"); } catch { im = {}; }
-          return { id: n.id, type: "tool", tool: d.tool, output_key: d.outputKey, input_mapping: im, label: d.label, position: pos };
+          return { id: n.id, type: "tool", tool: d.tool, output_key: d.outputKey, input_mapping: im, on_error: d.onError || undefined, label: d.label, position: pos };
         }
         const d = n.data as AgentNodeData;
-        return { id: n.id, type: "agent", agent_id: d.agentId, output_key: d.outputKey, label: d.agentName, position: pos };
+        return { id: n.id, type: "agent", agent_id: d.agentId, output_key: d.outputKey, on_error: d.onError || undefined, label: d.agentName, position: pos };
       }),
       edges: edges.map((e: Edge, i: number) => {
         const d = (e.data as EdgeData) ?? {};
@@ -351,6 +358,16 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
                 <input className={FIELD} value={(selectedNode.data as ToolNodeData).outputKey ?? ""}
                   onChange={(e) => patchToolNode(selectedNode.id, { outputKey: e.target.value })} />
               </div>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">On failure → route to</label>
+                <select className={FIELD} value={(selectedNode.data as ToolNodeData).onError ?? ""}
+                  onChange={(e) => patchToolNode(selectedNode.id, { onError: e.target.value || undefined })}>
+                  <option value="">— fail the run —</option>
+                  {nodes.filter((n) => n.id !== selectedNode.id).map((n) => (
+                    <option key={n.id} value={n.id}>{nodeLabel(n)}</option>
+                  ))}
+                </select>
+              </div>
               <button onClick={() => setEntry(selectedNode.id)} className="w-full rounded-md border border-[var(--color-border)] px-2 py-1.5 text-sm">Set as entry node</button>
               <button onClick={() => deleteNode(selectedNode.id)} className="w-full rounded-md border border-[var(--color-status-failed)] px-2 py-1.5 text-sm text-[var(--color-status-failed)]">Delete node</button>
             </div>
@@ -362,6 +379,16 @@ function BuilderInner({ workflowId, initialName, initialDescription, initialGrap
                 <label className="text-xs text-[var(--color-muted-foreground)]">Output key</label>
                 <input className={FIELD} value={(selectedNode.data as AgentNodeData).outputKey ?? ""}
                   onChange={(e) => patchNode(selectedNode.id, { outputKey: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs text-[var(--color-muted-foreground)]">On failure → route to</label>
+                <select className={FIELD} value={(selectedNode.data as AgentNodeData).onError ?? ""}
+                  onChange={(e) => patchNode(selectedNode.id, { onError: e.target.value || undefined })}>
+                  <option value="">— fail the run —</option>
+                  {nodes.filter((n) => n.id !== selectedNode.id).map((n) => (
+                    <option key={n.id} value={n.id}>{nodeLabel(n)}</option>
+                  ))}
+                </select>
               </div>
               <button onClick={() => setEntry(selectedNode.id)} className="w-full rounded-md border border-[var(--color-border)] px-2 py-1.5 text-sm">Set as entry node</button>
               <button onClick={() => deleteNode(selectedNode.id)} className="w-full rounded-md border border-[var(--color-status-failed)] px-2 py-1.5 text-sm text-[var(--color-status-failed)]">Delete node</button>

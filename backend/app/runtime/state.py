@@ -23,6 +23,8 @@ class GraphState(TypedDict, total=False):
     current_agent: str | None
     iteration_count: int
     metadata: Annotated[dict[str, Any], merge_dicts]
+    # node_id -> error message, for on-failure routing (see build_outer_graph)
+    errors: Annotated[dict[str, Any], merge_dicts]
 
 
 def build_eval_context(state: GraphState) -> dict[str, Any]:
@@ -46,4 +48,5 @@ def initial_state(run_id: str, variables: dict[str, Any] | None = None) -> Graph
         current_agent=None,
         iteration_count=0,
         metadata={},
+        errors={},
     )

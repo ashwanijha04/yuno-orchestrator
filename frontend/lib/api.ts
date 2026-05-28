@@ -172,6 +172,7 @@ export interface GraphNode {
   tool?: string; // for tool nodes: built-in or mcp__server__tool
   output_key?: string;
   input_mapping?: Record<string, string>;
+  on_error?: string; // node id to route to if this node fails
   position?: { x: number; y: number };
   label?: string;
 }
