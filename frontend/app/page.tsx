@@ -5,7 +5,6 @@ import Link from "next/link";
 import { api, type Agent, type Approval, type Stats } from "@/lib/api";
 import { AgentConstellation } from "@/components/agent-constellation";
 import { MissionQueue } from "@/components/mission-queue";
-import { LiveActivity } from "@/components/live-activity";
 import { Markdown } from "@/components/markdown";
 
 function Gauge({ label, value, accent, pulse }: { label: string; value: string | number; accent?: string; pulse?: boolean }) {
@@ -133,11 +132,8 @@ export default function Cockpit() {
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <div className="h-[480px] min-w-0"><JarvisConsole jarvisId={jarvis} /></div>
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="hud-grid h-[240px] shrink-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-2">
-            <AgentConstellation />
-          </div>
-          <div className="h-[224px]"><LiveActivity /></div>
+        <div className="hud-grid h-[480px] min-w-0 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)]/40 p-3">
+          <AgentConstellation />
         </div>
       </div>
 
