@@ -20,3 +20,6 @@ next-env.d.ts
 
 # TS build cache
 *.tsbuildinfo
+
+# host claude bridge runtime pid
+.bridge.pid

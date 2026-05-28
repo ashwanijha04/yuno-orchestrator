@@ -82,4 +82,23 @@ cat <<EOF
 
 EOF
 
+# Auto-start the host-side Claude Code bridge so `coding_session` works out of the
+# box (it uses your LOCAL `claude` CLI — must run on the host, not in Docker). It
+# retries until the backend is up. Skip with YUNO_NO_BRIDGE=1 or if claude is absent.
+start_bridge() {
+  if [ "${YUNO_NO_BRIDGE:-0}" = "1" ]; then echo "  claude bridge: skipped (YUNO_NO_BRIDGE=1)"; return; fi
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "  claude bridge: skipped — 'claude' CLI not on PATH (install Claude Code to enable coding_session)"; return
+  fi
+  if [ -f .bridge.pid ] && kill -0 "$(cat .bridge.pid 2>/dev/null)" 2>/dev/null; then
+    echo "  claude bridge: already running (pid $(cat .bridge.pid))"; return
+  fi
+  YUNO_API="http://localhost:${BACKEND_PORT}" \
+  CLAUDE_WORKSPACE="${CLAUDE_WORKSPACE:-$HOME/yuno-coding-workspace}" \
+    nohup python3 scripts/claude_bridge.py >/tmp/yuno-claude-bridge.log 2>&1 &
+  echo "$!" > .bridge.pid
+  echo "  claude bridge: started (pid $!) · log /tmp/yuno-claude-bridge.log"
+}
+start_bridge
+
 exec docker compose up "$@"

@@ -1,10 +1,14 @@
-.PHONY: up down logs build test fmt seed migrate backend-shell
+.PHONY: up down logs build test fmt seed migrate backend-shell bridge-logs
 
-up:                ## Boot the full stack (auto-selects free host ports)
+up:                ## Boot the full stack (auto-selects free host ports + claude bridge)
 	./scripts/dev-up.sh --build
 
-down:              ## Stop and remove containers
+down:              ## Stop and remove containers (and the host claude bridge)
+	-@[ -f .bridge.pid ] && kill "$$(cat .bridge.pid)" 2>/dev/null && echo "claude bridge stopped"; rm -f .bridge.pid
 	docker compose down
+
+bridge-logs:       ## Tail the host claude bridge log
+	tail -f /tmp/yuno-claude-bridge.log
 
 logs:
 	docker compose logs -f
