@@ -93,12 +93,14 @@ export default function Cockpit() {
   const [s, setS] = useState<Stats | null>(null);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [jarvis, setJarvis] = useState<string | null>(null);
+  const [bridge, setBridge] = useState(false);
 
   useEffect(() => {
     api.listAgents().then((a) => setJarvis(a.find((x: Agent) => x.name === "Jarvis")?.id ?? null)).catch(() => {});
     const load = () => {
       api.stats().then(setS).catch(() => {});
       api.listApprovals().then(setApprovals).catch(() => {});
+      api.codingBridgeStatus().then((b) => setBridge(b.connected)).catch(() => setBridge(false));
     };
     load();
     const t = setInterval(load, 3000);
@@ -117,9 +119,17 @@ export default function Cockpit() {
           <h1 className="text-2xl font-semibold tracking-tight">Mission Control</h1>
           <p className="mt-0.5 text-sm text-[var(--color-muted-foreground)]">Talk to Jarvis. Watch the team work.</p>
         </div>
-        <Link href="/orchestrate" className="rounded-md border border-[var(--color-primary)] px-4 py-2 text-sm text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-foreground)]">
-          Orchestrate a task ▶
-        </Link>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs"
+            title={bridge ? "Local Claude Code bridge is connected — Jarvis can run coding tasks on this machine" : "No coding bridge — run `make up` or `python3 scripts/claude_bridge.py`"}>
+            <span className={`h-2 w-2 rounded-full ${bridge ? "hud-pulse" : ""}`}
+              style={{ background: bridge ? "var(--color-status-completed)" : "var(--color-muted-foreground)" }} />
+            <span className="text-[var(--color-muted-foreground)]">coding bridge {bridge ? "connected" : "offline"}</span>
+          </span>
+          <Link href="/orchestrate" className="rounded-md border border-[var(--color-primary)] px-4 py-2 text-sm text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-[var(--color-primary-foreground)]">
+            Orchestrate a task ▶
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">

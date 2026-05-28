@@ -18,6 +18,7 @@ from app.redis_client import get_redis
 router = APIRouter(prefix="/coding", tags=["coding"])
 
 PENDING = "coding:pending"
+SEEN = "coding:bridge_seen"  # heartbeat: set on each bridge poll, short TTL
 
 
 def _key(session_id: str) -> str:
@@ -35,10 +36,17 @@ class ResultIn(BaseModel):
     ok: bool = True
 
 
+@router.get("/status")
+async def status():
+    """Whether a host coding bridge has polled recently (cockpit indicator)."""
+    return {"connected": bool(await get_redis().exists(SEEN))}
+
+
 @router.get("/next")
 async def claim_next():
     """The host bridge calls this to claim the next pending coding job (204 if none)."""
     r = get_redis()
+    await r.set(SEEN, "1", ex=12)  # heartbeat — the bridge polls every ~2s
     sid = await r.lpop(PENDING)
     if not sid:
         return Response(status_code=204)
