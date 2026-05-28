@@ -12,6 +12,10 @@ const STATUS_COLOR: Record<string, string> = {
 
 type Ev = { key: string; icon: string; text: string; who?: string; tone?: string };
 
+// Coordination tools are the delegation mechanism itself — already shown as 🤝
+// lines below, so we don't also dump their raw results into the feed.
+const COORDINATION = new Set(["list_agents", "create_agent", "send_message_to_agent", "run_debate"]);
+
 function eventsOf(run: RunDetail): Ev[] {
   const evs: Ev[] = [];
   (run.messages ?? []).forEach((m, i) => {
@@ -19,6 +23,7 @@ function eventsOf(run: RunDetail): Ev[] {
       evs.push({ key: "m" + i, icon: "🧠", text: m.content.replace(/^🧠\s*/, "") });
     if (m.role === "tool") {
       const tc = Array.isArray(m.tool_calls) ? (m.tool_calls[0] as { name?: string })?.name : undefined;
+      if (COORDINATION.has(tc ?? "")) return; // plumbing — represented by 🤝 lines
       const mcp = (tc ?? "").startsWith("mcp__");
       evs.push({ key: "t" + i, icon: mcp ? "🔌" : "🔧", text: `${tc ?? "tool"} → ${m.content.slice(0, 60)}` });
     }
