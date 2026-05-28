@@ -55,11 +55,21 @@ export function AgentConstellation() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  const ring = agents.filter((a) => a.name !== "Jarvis" && a.name !== "Orchestrator");
-  const W = 680, H = 380, cx = W / 2, cy = H / 2, R = 142;
-  const hubLive = (live?.activeNow.size ?? 0) > 0 || live?.coordinatorBusy;
+  const roster = agents.filter((a) => a.name !== "Jarvis" && a.name !== "Orchestrator");
   const state = (n: string): "active" | "done" | "idle" =>
     live?.activeNow.has(n) ? "active" : live?.done.has(n) ? "done" : "idle";
+  // Focus mode: while Jarvis works, show ONLY the agents involved (big, clear)
+  // instead of the whole roster — declutters and makes lit agents obvious.
+  const involved = new Set<string>([...(live?.activeNow ?? []), ...(live?.done ?? [])]);
+  const focus = involved.size > 0;
+  const ring = focus ? roster.filter((a) => involved.has(a.name)) : roster;
+  const idleHidden = focus ? roster.length - ring.length : 0;
+
+  const W = 680, H = 380, cx = W / 2, cy = H / 2;
+  // Fewer nodes → roomier ring; many idle nodes → tighter.
+  const R = focus ? 120 : Math.min(150, 70 + ring.length * 3);
+  const big = focus || ring.length <= 8;
+  const hubLive = (live?.activeNow.size ?? 0) > 0 || live?.coordinatorBusy;
   const COLOR = { active: "var(--color-status-running)", done: "var(--color-status-completed)", idle: "var(--color-muted-foreground)" };
 
   const pts = ring.map((a, i) => {
@@ -72,7 +82,7 @@ export function AgentConstellation() {
     ? live.coordinatorBusy ? "Jarvis is planning…"
       : live.activeNow.size > 0 ? `Working with ${live.activeNow.size} agent${live.activeNow.size > 1 ? "s" : ""}…`
       : live.status === "completed" ? "Task complete" : live.status
-    : ring.length === 0 ? "No specialists yet — ask Jarvis to build a team." : "Idle — ready for a task";
+    : roster.length === 0 ? "No specialists yet — ask Jarvis to build a team." : `Idle — ${roster.length} agents ready`;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -84,25 +94,32 @@ export function AgentConstellation() {
           </radialGradient>
         </defs>
         <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--color-border)" strokeWidth={1} opacity={0.3} strokeDasharray="2 6" />
-        {pts.map((p) => {
+        {/* connection lines — only drawn in focus mode (during/after a task) */}
+        {focus && pts.map((p) => {
           const on = p.st === "active";
           return (
             <line key={`l-${p.agent.id}`} x1={cx} y1={cy} x2={p.x} y2={p.y}
-              stroke={on ? "var(--color-status-running)" : p.st === "done" ? "var(--color-status-completed)" : "var(--color-border)"}
-              strokeWidth={on ? 2 : 1} className={on ? "hud-flow" : ""} opacity={on ? 0.9 : p.st === "done" ? 0.45 : 0.22} />
+              stroke={on ? "var(--color-status-running)" : "var(--color-status-completed)"}
+              strokeWidth={on ? 2.5 : 1.5} className={on ? "hud-flow" : ""} opacity={on ? 0.95 : 0.5}
+              style={{ transition: "opacity 0.4s" }} />
           );
         })}
         {pts.map((p) => {
           const role = (p.agent.role || "").split("—")[0].split(" ")[0];
+          const r = p.st === "active" ? 13 : big ? 9 : 5;
           return (
-            <g key={p.agent.id} className={p.st === "active" ? "hud-pulse" : ""}>
-              {p.st === "active" && <circle cx={p.x} cy={p.y} r={20} fill="url(#hubGlow)" />}
-              <circle cx={p.x} cy={p.y} r={p.st === "active" ? 11 : 7}
-                fill={p.st === "active" ? "var(--color-status-running)" : "var(--color-card)"} stroke={COLOR[p.st]} strokeWidth={2} />
-              {p.st === "done" && <text x={p.x} y={p.y + 3.5} textAnchor="middle" fontSize={9} fill="var(--color-primary-foreground)">✓</text>}
-              <text x={p.x} y={p.y + 26} textAnchor="middle" className="font-mono" fontSize={9.5}
-                fill={p.st === "idle" ? "var(--color-muted-foreground)" : "var(--color-foreground)"}>{p.agent.name.split(" ")[0]}</text>
-              <text x={p.x} y={p.y + 37} textAnchor="middle" fontSize={7.5} fill="var(--color-muted-foreground)">{role}</text>
+            <g key={p.agent.id} className={p.st === "active" ? "hud-pulse" : ""} style={{ transition: "transform 0.4s" }}>
+              {p.st === "active" && <circle cx={p.x} cy={p.y} r={26} fill="url(#hubGlow)" />}
+              <circle cx={p.x} cy={p.y} r={r}
+                fill={p.st === "active" ? "var(--color-status-running)" : p.st === "done" ? "var(--color-status-completed)" : "var(--color-card)"}
+                stroke={COLOR[p.st]} strokeWidth={2} style={{ transition: "r 0.3s, fill 0.3s" }} />
+              {p.st === "done" && <text x={p.x} y={p.y + 3.5} textAnchor="middle" fontSize={10} fill="var(--color-primary-foreground)">✓</text>}
+              {(big || p.st !== "idle") && (
+                <text x={p.x} y={p.y + (r + 14)} textAnchor="middle" className="font-mono"
+                  fontSize={big ? 11 : 8.5} fontWeight={p.st === "active" ? 600 : 400}
+                  fill={p.st === "idle" ? "var(--color-muted-foreground)" : "var(--color-foreground)"}>{p.agent.name.split(" ")[0]}</text>
+              )}
+              {big && <text x={p.x} y={p.y + (r + 24)} textAnchor="middle" fontSize={8} fill="var(--color-muted-foreground)">{role}</text>}
             </g>
           );
         })}
@@ -119,6 +136,9 @@ export function AgentConstellation() {
           {live?.task ? <span className="text-[var(--color-foreground)]"> · {live.task.slice(0, 60)}</span> : null}
         </p>
         <div className="flex flex-wrap items-center gap-1.5">
+          {idleHidden > 0 && (
+            <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[var(--color-muted-foreground)]">+{idleHidden} idle</span>
+          )}
           {!!live?.recalled && (
             <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px]">🧠 recalled {live.recalled}</span>
           )}
