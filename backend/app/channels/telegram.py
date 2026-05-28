@@ -8,12 +8,26 @@
 
 from __future__ import annotations
 
+import html
 import json
+import re
 from datetime import UTC, datetime
 
 import httpx
 
 from app.channels.base import ChannelHealth, InboundMessage
+
+
+def _to_telegram_html(md: str) -> str:
+    """Convert the model's markdown into Telegram-flavoured HTML. Telegram doesn't
+    render markdown and supports only a small HTML tag set (b, i, code, pre, …)."""
+    text = html.escape(md or "", quote=False)  # escape & < > first
+    text = re.sub(r"```[a-zA-Z0-9]*\n?(.*?)```", lambda m: f"<pre>{m.group(1)}</pre>", text, flags=re.DOTALL)
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)          # **bold**
+    text = re.sub(r"(?m)^\s*#{1,6}\s*(.+)$", r"<b>\1</b>", text)  # # headers -> bold
+    text = re.sub(r"(?m)^\s*[-*]\s+", "• ", text)                # bullets
+    return text.strip()
 
 
 class TelegramChannel:
@@ -29,10 +43,17 @@ class TelegramChannel:
         return f"https://api.telegram.org/bot{self.token}"
 
     async def send(self, external_id: str, content: str) -> str:
+        # Render markdown as Telegram HTML; if Telegram rejects the markup
+        # (malformed tags), fall back to plain text so the message still sends.
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
-                f"{self._base}/sendMessage", json={"chat_id": external_id, "text": content}
+                f"{self._base}/sendMessage",
+                json={"chat_id": external_id, "text": _to_telegram_html(content), "parse_mode": "HTML"},
             )
+            if resp.status_code >= 400:
+                resp = await client.post(
+                    f"{self._base}/sendMessage", json={"chat_id": external_id, "text": content}
+                )
             resp.raise_for_status()
             return str(resp.json().get("result", {}).get("message_id", ""))
 

@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.channels.base import InboundMessage
-from app.db.models import ChannelBinding
+from app.db.models import ChannelBinding, OutboundMessage
 from app.db.repositories import AgentRepository, RunRepository, WorkflowRepository
 from app.logging import get_logger
 from app.runtime import queue
@@ -41,6 +41,19 @@ async def handle_inbound(inbound: InboundMessage, session_factory: async_session
         binding = await _resolve_binding(s, channel_id, inbound.external_id)
         if binding is None:
             log.warning("inbound.no_binding", channel_id=str(channel_id), external_id=inbound.external_id)
+            return None
+
+        # Greet on /start with a canned welcome instead of spinning up the model.
+        if inbound.content.strip().lower() in ("/start", "/help"):
+            agent = await AgentRepository(s).get(binding.agent_id) if binding.agent_id else None
+            name = agent.name if agent else "your assistant"
+            welcome = (
+                f"👋 I'm {name}, your AI chief of staff. Ask me anything — I can plan work, "
+                "build a team of agents, run debates, and I remember our conversations. "
+                "What can I do for you?"
+            )
+            s.add(OutboundMessage(channel_id=channel_id, external_id=inbound.external_id, content=welcome, status="pending"))
+            await s.commit()
             return None
 
         workflows = WorkflowRepository(s)
