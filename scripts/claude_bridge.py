@@ -53,21 +53,61 @@ def _post_result(session_id: str, result: str, ok: bool) -> None:
         print(f"  ! failed to post result: {exc}")
 
 
-def _run_claude(task: str, cwd: str) -> tuple[str, bool]:
+def _summarize(ev: dict):
+    """(human-readable live line | None, final result text | None) for a stream event."""
+    t = ev.get("type")
+    if t == "system" and ev.get("subtype") == "init":
+        return ("▶ session started", None)
+    if t == "assistant":
+        lines = []
+        for b in ev.get("message", {}).get("content", []):
+            if b.get("type") == "text" and b.get("text", "").strip():
+                lines.append("💬 " + b["text"].strip().replace("\n", " ")[:200])
+            elif b.get("type") == "tool_use":
+                inp = b.get("input", {}) or {}
+                hint = inp.get("file_path") or inp.get("command") or inp.get("path") or inp.get("pattern") or ""
+                lines.append(f"🔧 {b.get('name', 'tool')} {str(hint)[:90]}".rstrip())
+        return ("\n    ".join(lines) if lines else None, None)
+    if t == "user":
+        return ("↳ tool result", None)
+    if t == "result":
+        return (None, ev.get("result", ""))
+    return (None, None)
+
+
+def _run_claude(task: str, cwd: str, on_event=None) -> tuple[str, bool]:
     workdir = os.path.expanduser(cwd) if cwd else WORKSPACE
     os.makedirs(workdir, exist_ok=True)
-    print(f"  ▶ claude in {workdir}: {task[:80]}")
+    print(f"  ▶ claude in {workdir}: {task[:80]}", flush=True)
+    cmd = [CLAUDE, "-p", task, "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
     try:
-        proc = subprocess.run(
-            [CLAUDE, "-p", task, "--dangerously-skip-permissions"],
-            cwd=workdir, capture_output=True, text=True, timeout=JOB_TIMEOUT,
-        )
+        proc = subprocess.Popen(cmd, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError:
         return ("`claude` CLI not found on PATH — install Claude Code and log in.", False)
+    final = ""
+    try:
+        for line in proc.stdout:  # one JSON event per line, streamed live
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            summary, result_text = _summarize(ev)
+            if summary:
+                print(f"    {summary}", flush=True)
+                if on_event:
+                    on_event(summary)
+            if result_text is not None:
+                final = result_text
+        proc.wait(timeout=JOB_TIMEOUT)
     except subprocess.TimeoutExpired:
+        proc.kill()
         return (f"claude session timed out after {JOB_TIMEOUT}s", False)
-    out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-    return (out or "(no output)", proc.returncode == 0)
+    if not final:
+        final = (proc.stderr.read() if proc.stderr else "").strip() or "(no output)"
+    return (final, proc.returncode == 0)
 
 
 def main() -> None:
