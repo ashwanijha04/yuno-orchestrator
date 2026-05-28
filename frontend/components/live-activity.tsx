@@ -32,7 +32,7 @@ function eventsOf(run: RunDetail): Ev[] {
    calls, delegations, debate turns, memory recalls — for the active (or latest) run. */
 export function LiveActivity() {
   const [run, setRun] = useState<RunDetail | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -49,7 +49,11 @@ export function LiveActivity() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [run]);
+  // Scroll the feed itself to the bottom — never the page.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [run]);
 
   const running = run?.status === "running" || run?.status === "pending";
   const evs = run ? eventsOf(run) : [];
@@ -60,7 +64,7 @@ export function LiveActivity() {
         {running && <span className="h-1.5 w-1.5 rounded-full hud-pulse" style={{ background: "var(--color-status-running)" }} />}
         Live Activity {run?.task && <span className="truncate normal-case text-[var(--color-foreground)]">· {run.task.slice(0, 40)}</span>}
       </p>
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+      <div ref={scrollRef} className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
         {!run && <p className="text-sm text-[var(--color-muted-foreground)]">Idle — ask Jarvis to do something.</p>}
         {run && evs.length === 0 && (
           <p className="text-sm text-[var(--color-status-running)] hud-pulse">{running ? "Jarvis is thinking…" : "Answered directly — no tool calls."}</p>
@@ -73,7 +77,6 @@ export function LiveActivity() {
             {e.tone && <span className="shrink-0" style={{ color: STATUS_COLOR[e.tone] }}>•</span>}
           </div>
         ))}
-        <div ref={endRef} />
       </div>
     </div>
   );

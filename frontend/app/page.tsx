@@ -28,9 +28,13 @@ function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
   const [input, setInput] = useState("");
   const [convo, setConvo] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [turns, busy]);
+  // Scroll the message list itself — not the page.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turns, busy]);
 
   async function send() {
     const msg = input.trim();
@@ -53,7 +57,7 @@ function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
         <span className="font-mono text-sm text-glow" style={{ color: "var(--color-primary)" }}>JARVIS</span>
         <span className="text-xs text-[var(--color-muted-foreground)]">· your AI chief of staff</span>
       </div>
-      <div className="min-h-[180px] flex-1 space-y-3 overflow-auto p-4">
+      <div ref={scrollRef} className="min-h-[180px] flex-1 space-y-3 overflow-auto p-4">
         {turns.length === 0 && (
           <p className="text-sm text-[var(--color-muted-foreground)]">
             Ask me to plan something, build a team of agents, or run a task. e.g.{" "}
@@ -69,7 +73,6 @@ function JarvisConsole({ jarvisId }: { jarvisId: string | null }) {
           </div>
         ))}
         {busy && <p className="text-xs text-[var(--color-status-running)] hud-pulse">Jarvis is thinking…</p>}
-        <div ref={endRef} />
       </div>
       <div className="flex gap-2 border-t border-[var(--color-border)] p-3">
         <input
