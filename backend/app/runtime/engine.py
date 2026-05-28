@@ -356,8 +356,11 @@ class RunEngine:
         if output:
             await remember(author, output, role="assistant", conversation_id=cid)
 
-    async def _load_conversation(self, s, conversation_id: str, current_run_id: uuid.UUID, limit: int = 20) -> list[dict]:
-        """Prior user/assistant turns of this chat, across earlier runs."""
+    async def _load_conversation(self, s, conversation_id: str, current_run_id: uuid.UUID, limit: int = 30) -> list[dict]:
+        """The most recent turns of this chat (verbatim, bounded so the context can't
+        overflow). Older turns aren't dropped from the agent's awareness — for
+        long-term-memory agents they resurface via shared-memory recall (which is
+        blended in alongside this window)."""
         from app.db.models import Message, Run
 
         run_ids = (
