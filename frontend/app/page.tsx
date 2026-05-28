@@ -120,6 +120,14 @@ export default function Cockpit() {
         </Link>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Gauge label="Running" value={s?.running ?? "—"} accent={s?.running ? "var(--color-status-running)" : undefined} pulse={!!s?.running} />
+        <Gauge label="Approvals" value={approvals.length} accent={approvals.length ? "var(--color-status-paused)" : undefined} pulse={approvals.length > 0} />
+        <Gauge label="Agents" value={s?.agents ?? "—"} />
+        <Gauge label="Spend" value={s ? `$${s.total_cost_usd}` : "—"} />
+        <Gauge label="Tokens" value={s ? s.total_tokens.toLocaleString() : "—"} />
+      </div>
+
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <div className="h-[480px] min-w-0"><JarvisConsole jarvisId={jarvis} /></div>
         <div className="flex min-w-0 flex-col gap-4">
@@ -131,14 +139,6 @@ export default function Cockpit() {
       </div>
 
       <div className="h-[300px]"><MissionQueue /></div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Gauge label="Running" value={s?.running ?? "—"} accent={s?.running ? "var(--color-status-running)" : undefined} pulse={!!s?.running} />
-        <Gauge label="Approvals" value={approvals.length} accent={approvals.length ? "var(--color-status-paused)" : undefined} pulse={approvals.length > 0} />
-        <Gauge label="Agents" value={s?.agents ?? "—"} />
-        <Gauge label="Spend" value={s ? `$${s.total_cost_usd}` : "—"} />
-        <Gauge label="Tokens" value={s ? s.total_tokens.toLocaleString() : "—"} />
-      </div>
 
       {approvals.length > 0 && (
         <div className="space-y-2">
