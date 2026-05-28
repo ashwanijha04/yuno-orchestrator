@@ -326,7 +326,7 @@ class RunEngine:
 
                     try:
                         recalled = await ExternalMemoryStrategy()._recall(
-                            agent["id"], MemoryContext(run_id=str(run_id), query=query)
+                            MemoryContext(run_id=str(run_id), query=query)
                         )
                         if recalled:
                             convo = recalled + convo
@@ -350,10 +350,11 @@ class RunEngine:
         from app.memory.external import remember
 
         cid = str(run_id)
+        author = agent.get("name") or "agent"
         if task:
-            await remember(agent["id"], f"Task: {task}", role="user", conversation_id=cid)
+            await remember(author, f"Task: {task}", role="user", conversation_id=cid)
         if output:
-            await remember(agent["id"], output, role="assistant", conversation_id=cid)
+            await remember(author, output, role="assistant", conversation_id=cid)
 
     async def _load_conversation(self, s, conversation_id: str, current_run_id: uuid.UUID, limit: int = 20) -> list[dict]:
         """Prior user/assistant turns of this chat, across earlier runs."""

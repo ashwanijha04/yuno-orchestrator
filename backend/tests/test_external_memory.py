@@ -29,22 +29,19 @@ def _available() -> bool:
 pytestmark = pytest.mark.skipif(not _available(), reason="extremis/store/key not configured")
 
 
-async def test_remember_recall_is_namespaced():
+async def test_shared_memory_is_recalled_with_attribution():
     import uuid
 
     from app.memory.base import MemoryContext
     from app.memory.external import ExternalMemoryStrategy, remember
 
-    ns = f"test-agent-{uuid.uuid4().hex[:8]}"
-    other = f"test-agent-{uuid.uuid4().hex[:8]}"
-    fact = "The codename for the spring release is Project Heron."
+    codename = f"Project-{uuid.uuid4().hex[:6]}"
+    # One agent writes; the shared pool attributes it to that author.
+    await remember("Remy the Researcher", f"The codename for the spring release is {codename}.",
+                   role="assistant", conversation_id="t1")
 
-    await remember(ns, fact, role="assistant", conversation_id="t1")
-
-    strat = ExternalMemoryStrategy(max_messages=5)
-    hits = await strat._recall(ns, MemoryContext(run_id=None, query="what is the spring release codename?"))
-    assert hits is not None and any("Heron" in h["content"] for h in hits)
-
-    # Isolation: a different agent's namespace must not see it.
-    miss = await strat._recall(other, MemoryContext(run_id=None, query="what is the spring release codename?"))
-    assert not (miss or [])
+    # Any agent recalls it from the shared team memory.
+    strat = ExternalMemoryStrategy(max_messages=10)
+    hits = await strat._recall(MemoryContext(run_id=None, query="what is the spring release codename?"))
+    assert hits is not None and any(codename in h["content"] for h in hits)
+    assert any("Remy the Researcher" in h["content"] for h in hits)  # attributed

@@ -69,7 +69,7 @@ async def _learn_from_eval(
             f'{detail or "be more accurate, relevant, and complete."}'
         )
     for a in agents:
-        await remember_lesson(a.id, lesson)
+        await remember_lesson(a.name, lesson)
 
 
 def _task_of(run) -> str | None:

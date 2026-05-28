@@ -36,6 +36,11 @@ log = get_logger("memory.external")
 _EMBED_DIM = 1536
 _EMBED_MODEL = "text-embedding-3-small"
 
+# Shared team memory: every agent reads & writes the same pool, with the author's
+# name embedded so recalls are attributed ("Mara: …"). So any agent can recall what
+# any other did — collective memory across the team.
+_SHARED_NS = "team"
+
 # One extremis client per namespace (agent), reused across calls so we don't
 # churn Postgres connections; a per-namespace lock serialises access. A shared
 # embedder (a stateless OpenAI client) is reused across all namespaces.
@@ -102,33 +107,36 @@ async def _call(namespace: str, fn: Callable[[Any], Any]) -> Any:
 
 
 async def remember(
-    agent_id, content: str, role: str = "assistant", conversation_id: str = "default"
+    author, content: str, role: str = "assistant", conversation_id: str = "default"
 ) -> None:
-    """Persist a memory for an agent (cheap: embed + store, no LLM). Best-effort."""
+    """Persist a memory to the SHARED team pool, attributed to `author` (agent
+    name). Best-effort — never fails a run."""
     if not _enabled() or not content or not content.strip():
         return
+    body = f"{author}: {content.strip()}" if author else content.strip()
     try:
         await _call(
-            str(agent_id),
-            lambda mem: mem.remember(content.strip(), role=role, conversation_id=conversation_id),
+            _SHARED_NS,
+            lambda mem: mem.remember(body, role=role, conversation_id=conversation_id),
         )
     except Exception as exc:  # noqa: BLE001 — memory writes never fail a run
         log.warning("extremis.remember_failed", detail=str(exc))
 
 
-async def remember_lesson(agent_id, lesson: str) -> None:
-    """Encode a distilled lesson into the agent's PROCEDURAL memory (deduped),
-    so it surfaces on future tasks — the 'learn' step of the improve loop."""
+async def remember_lesson(author, lesson: str) -> None:
+    """Encode a distilled lesson into the team's shared PROCEDURAL memory (deduped),
+    so it surfaces for any agent on future tasks — the 'learn' step of the loop."""
     if not _enabled() or not lesson or not lesson.strip():
         return
+    body = f"{author} learned: {lesson.strip()}" if author else lesson.strip()
 
     def _write(mem):
         from extremis.types import MemoryLayer
 
-        return mem.remember_now(lesson.strip(), layer=MemoryLayer.PROCEDURAL)
+        return mem.remember_now(body, layer=MemoryLayer.PROCEDURAL)
 
     try:
-        await _call(str(agent_id), _write)
+        await _call(_SHARED_NS, _write)
     except Exception as exc:  # noqa: BLE001
         log.warning("extremis.lesson_failed", detail=str(exc))
 
@@ -139,25 +147,24 @@ class ExternalMemoryStrategy:
         self._fallback = BufferMemory(max_messages)
 
     async def load(self, agent_id, ctx: MemoryContext, session: AsyncSession) -> list[dict]:
-        recalled = await self._recall(agent_id, ctx)
+        recalled = await self._recall(ctx)
         buffer = await self._fallback.load(agent_id, ctx, session)
         if recalled is None:  # extremis unavailable -> pure buffer fallback
             return buffer
-        # Long-term memories first, then the in-run buffer.
+        # Shared team memories first, then the in-run buffer.
         return recalled + buffer
 
-    async def _recall(self, agent_id, ctx: MemoryContext) -> list[dict] | None:
+    async def _recall(self, ctx: MemoryContext) -> list[dict] | None:
         if not _enabled():
             return None
         query = (ctx.query or "").strip()
         if not query:
             return []  # nothing to retrieve against yet
         try:
-            # min_score=0 so the recency-ranked recent memories surface too — not
-            # only close semantic matches — so an agent can answer "what did I do
-            # lately?" and stays aware of its recent work.
+            # Shared pool, min_score=0 so recency-ranked recent memories surface too
+            # (so an agent can answer "what did we do lately?"), not only close matches.
             results = await _call(
-                str(agent_id), lambda mem: mem.recall(query, limit=self.max_messages, min_score=0.0)
+                _SHARED_NS, lambda mem: mem.recall(query, limit=self.max_messages, min_score=0.0)
             )
             return [
                 {"role": "system", "content": f"[memory] {r.memory.content}"}
