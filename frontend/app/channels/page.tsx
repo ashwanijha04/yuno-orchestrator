@@ -57,29 +57,56 @@ export default function ChannelsPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-3">
-          {channels.length === 0 && <p className="text-sm text-[var(--color-muted-foreground)]">No channels yet.</p>}
-          {channels.map((c) => (
-            <div key={c.id} className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
-              <div className="flex items-center justify-between">
-                <div><span className="font-medium">{c.name}</span> <span className="font-mono text-xs text-[var(--color-muted-foreground)]">{c.type}</span></div>
-                <span className="text-xs" style={{ color: c.status === "active" ? "var(--color-status-completed)" : "var(--color-muted-foreground)" }}>{c.status}</span>
-              </div>
-              {(bindings[c.id] ?? []).map((b) => (
-                <div key={b.id} className="mt-1 text-xs text-[var(--color-muted-foreground)]">↳ {b.external_id} → {agentName(b.agent_id)}</div>
-              ))}
-              <div className="mt-2 flex gap-2">
-                <select className={FIELD} value={bindForm[c.id]?.agent_id ?? ""}
-                  onChange={(e) => setBindForm({ ...bindForm, [c.id]: { ...(bindForm[c.id] ?? { external_id: "" }), agent_id: e.target.value } })}>
-                  <option value="">pick agent…</option>
-                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-                <input className={`${FIELD} flex-1`} placeholder="chat id or *"
-                  value={bindForm[c.id]?.external_id ?? ""}
-                  onChange={(e) => setBindForm({ ...bindForm, [c.id]: { ...(bindForm[c.id] ?? { agent_id: "" }), external_id: e.target.value } })} />
-                <button onClick={() => bind(c.id)} className="rounded-md border border-[var(--color-border)] px-3 text-sm">Bind</button>
-              </div>
+          {channels.length === 0 && (
+            <div className="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] p-10 text-center text-sm text-[var(--color-muted-foreground)]">
+              No channels yet. Add a Telegram bot on the right to reach an agent from the outside world.
             </div>
-          ))}
+          )}
+          {channels.map((c) => {
+            const isActive = c.status === "active";
+            const isError = c.status === "error";
+            const color = isActive ? "var(--color-status-completed)" : isError ? "var(--color-status-failed)" : "var(--color-muted-foreground)";
+            const bound = bindings[c.id] ?? [];
+            return (
+              <div key={c.id} className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4 transition-colors hover:border-[var(--color-primary)]/40">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="font-medium">{c.name}</span>
+                    <span className="rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--color-muted-foreground)]">{c.type}</span>
+                  </div>
+                  {/* Proper status pill — green dot + label, with a pulse when active. */}
+                  <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+                    style={{ borderColor: color, color }}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "hud-pulse" : ""}`} style={{ background: color }} />
+                    {c.status}
+                  </span>
+                </div>
+                {/* Bindings list: external_id → agent. Empty state nudges toward the form below. */}
+                <div className="mt-2 space-y-0.5">
+                  {bound.length === 0 ? (
+                    <p className="text-xs text-[var(--color-muted-foreground)]">No bindings — bind a chat below to start receiving messages.</p>
+                  ) : bound.map((b) => (
+                    <div key={b.id} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono text-[var(--color-muted-foreground)]">{b.external_id === "*" ? "any chat" : b.external_id}</span>
+                      <span className="text-[var(--color-muted-foreground)]">→</span>
+                      <span>{agentName(b.agent_id)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <select className={FIELD} value={bindForm[c.id]?.agent_id ?? ""}
+                    onChange={(e) => setBindForm({ ...bindForm, [c.id]: { ...(bindForm[c.id] ?? { external_id: "" }), agent_id: e.target.value } })}>
+                    <option value="">pick agent…</option>
+                    {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  <input className={`${FIELD} flex-1`} placeholder="chat id or *"
+                    value={bindForm[c.id]?.external_id ?? ""}
+                    onChange={(e) => setBindForm({ ...bindForm, [c.id]: { ...(bindForm[c.id] ?? { agent_id: "" }), external_id: e.target.value } })} />
+                  <button onClick={() => bind(c.id)} className="rounded-md border border-[var(--color-border)] px-3 text-sm hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]">Bind</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <form onSubmit={addChannel} className="h-fit space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-card)] p-4">
