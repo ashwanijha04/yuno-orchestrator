@@ -12,28 +12,71 @@ command.
 
 ---
 
+## Watch the demo first (4:42)
+
+📹 **[`demo/yuno-demo.mp4`](demo/yuno-demo.mp4)** — auto-recorded walkthrough of every
+brief requirement with burned-in captions + spoken narration. See [`demo/README.md`](demo/README.md)
+for the timestamp-by-requirement coverage map.
+
+---
+
 ## Quickstart
 
+### Prerequisites
+| | Required | Verify |
+|---|---|---|
+| Docker Desktop | ≥ 20.10 with Compose v2 | `docker --version && docker compose version` |
+| Docker RAM | ≥ 2 GB allocated (4 GB comfortable) | Docker Desktop → Settings → Resources |
+| Python 3 | 3.10+ (host, only for the port-scanning helper) | `python3 --version` |
+| `make` | any version | `make --version` |
+
+### The three commands
+
 ```bash
-cp .env.example .env          # optional: add OPENAI/ANTHROPIC keys + TELEGRAM_BOT_TOKEN
-make up                       # builds + starts everything, auto-selecting free ports
-make seed                     # Jarvis + a standing "company" of specialists + templates
+git clone https://github.com/ashwanijha04/yuno-orchestrator.git
+cd yuno-orchestrator
+
+cp .env.example .env          # see "API keys" below to enable real LLM output
+make up                       # ~5–10 min on first run (image builds); ~20 s after
+make seed                     # idempotent — Jarvis + 17 specialists + 5 templates + 3 team channels
 ```
 
-`make up` runs `scripts/dev-up.sh`, which **scans for free host ports** (so it works
-regardless of what else is on your machine), starts the stack, and **auto-launches the
-host-side Claude Code bridge** (see below). It prints the URLs:
+That's it. The startup script (`scripts/dev-up.sh`) auto-selects free host ports
+and prints the URLs at the end:
 
 ```
-UI         http://localhost:3000   (or the next free port — e.g. 3001)
-API        http://localhost:8000   (docs at /docs)
+UI         http://localhost:3001        (or next free port — usually 3000)
+API        http://localhost:8000        (OpenAPI docs at /docs)
 ```
 
-No API key? It still runs: `LLM_MODE=stub` (the default) gives deterministic canned
-responses so the whole flow is demoable offline. Set `LLM_MODE=live` + at least one
-provider key for real output — the **ModelRouter** routes by an agent's `task_type`
-(coding→Anthropic, normal→OpenAI, conversation→Gemini) and falls back across whatever
-keys you've set.
+### API keys (all optional — Yuno boots without any)
+
+`LLM_MODE=stub` (the default in `.env.example`) gives deterministic canned replies so
+the whole flow is demoable offline. For the **live** experience shown in the demo
+video, edit `.env` and add at least one provider key:
+
+| Var | What it powers | Where to get one | Cost note |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | Coding-task agents, Claude responses | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | ~$3/M input on Sonnet 4.5 |
+| `OPENAI_API_KEY` | Normal-task agents, Jarvis, TTS, embeddings | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | gpt-4o-mini is cheap |
+| `GEMINI_API_KEY` | Conversation-task agents (Gemini) | [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) | **Free tier** available |
+| `TAVILY_API_KEY` | Real `web_search` tool | [app.tavily.com](https://app.tavily.com/) | **Free tier**: 1k searches/month |
+| `TELEGRAM_BOT_TOKEN` | Telegram channel — talk to agents from your phone | DM [@BotFather](https://t.me/BotFather) → `/newbot` (90 sec) | Free |
+
+Then set `LLM_MODE=live` in `.env` and run `docker compose restart backend worker`.
+The **ModelRouter** routes by an agent's `task_type` (coding→Anthropic, normal→OpenAI,
+conversation→Gemini) and falls back gracefully across whatever keys you've set —
+missing providers are skipped, missing them all drops to stub.
+
+### Verify the install
+
+After `make seed`:
+- `curl http://localhost:8000/health` → `{"status":"ok","env":"dev","llm_mode":"live"}`
+- Browse to the UI — Cockpit should show 17 agents on the constellation
+- `docker compose exec backend pytest -q` → `84 passed, 1 skipped`
+
+Detailed setup, troubleshooting, and the 2:45 demo script:
+👉 **[`docs/local-setup.md`](docs/local-setup.md)**
 
 ---
 
