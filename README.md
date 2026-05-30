@@ -6,9 +6,9 @@ of staff and his staff, reach them through **Telegram**, and even have them spaw
 **real Claude Code sessions on your machine**. Everything runs locally with a single
 command.
 
-> Built for the Yuno AI Engineer challenge. Architecture rationale lives in
-> [`docs/architecture.md`](docs/architecture.md); the full build plan in
-> [`docs/plan.md`](docs/plan.md).
+> Built for the Yuno AI Engineer challenge. Architecture rationale + the
+> build plan + the "Understanding & Approach" submission doc are shipped as
+> PDFs in [`submission/`](submission/).
 
 ---
 
@@ -76,7 +76,7 @@ After `make seed`:
 - `docker compose exec backend pytest -q` → `84 passed, 1 skipped`
 
 Detailed setup, troubleshooting, and the 2:45 demo script:
-👉 **[`docs/local-setup.md`](docs/local-setup.md)**
+👉 **[`submission/local-setup.pdf`](submission/local-setup.pdf)**
 
 ---
 
