@@ -70,7 +70,9 @@ export function AgentConstellation() {
   const W = 680, H = 380, cx = W / 2, cy = H / 2;
   // Fewer nodes → roomier ring; many idle nodes → tighter.
   const R = focus ? 120 : Math.min(150, 70 + ring.length * 3);
-  const big = focus || ring.length <= 8;
+  // Show labels + roles on every dot while there are ≤14 specialists — anonymous
+  // dots look generic; named ones communicate "you have a team of identities."
+  const big = focus || ring.length <= 14;
   const hubLive = (live?.activeNow.size ?? 0) > 0 || live?.coordinatorBusy;
   const COLOR = { active: "var(--color-status-running)", done: "var(--color-status-completed)", idle: "var(--color-muted-foreground)" };
 
@@ -112,6 +114,9 @@ export function AgentConstellation() {
           return (
             <g key={p.agent.id} className={p.st === "active" ? "hud-pulse" : ""} style={{ transition: "transform 0.4s" }}>
               {p.st === "active" && <circle cx={p.x} cy={p.y} r={26} fill="url(#hubGlow)" />}
+              {/* Faint ring on idle dots ties them to the hub palette, so the
+                  constellation reads as "standing team" not "scattered dots". */}
+              {p.st === "idle" && <circle cx={p.x} cy={p.y} r={r + 4} fill="none" stroke="var(--color-primary)" strokeWidth={1} opacity={0.18} />}
               <circle cx={p.x} cy={p.y} r={r}
                 fill={p.st === "active" ? "var(--color-status-running)" : p.st === "done" ? "var(--color-status-completed)" : "var(--color-card)"}
                 stroke={COLOR[p.st]} strokeWidth={2} style={{ transition: "r 0.3s, fill 0.3s" }} />

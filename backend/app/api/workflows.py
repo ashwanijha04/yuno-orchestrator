@@ -33,7 +33,7 @@ async def _known_agent_ids(session: AsyncSession) -> set[str]:
 
 # Workflows created automatically for chat / quick-run / orchestrate / inter-agent
 # messages are plumbing, not user artifacts — hide them from the Workflows tab.
-_SYNTHETIC_PREFIXES = ("Quick ·", "msg->", "chat:", "__chat__", "Orchestration")
+_SYNTHETIC_PREFIXES = ("Quick ·", "msg->", "chat:", "__chat__", "Orchestration", "debate->", "channel:")
 
 
 def _is_synthetic(name: str) -> bool:
