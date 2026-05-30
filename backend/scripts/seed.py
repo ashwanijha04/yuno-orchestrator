@@ -265,6 +265,24 @@ LOOP_AGENTS = [
 ]
 LOOP_WORKFLOW_NAME = "Draft & Critique (demo)"
 
+# ── Tool-showcase templates ───────────────────────────────────────────────────
+# Each one surfaces a distinct capability on the run timeline so the demo can
+# point at it: built-in tool, MCP tool, and the human-approval gate.
+
+CITED_RESEARCH_NAME = "Cited Research (demo)"
+# Explicit web_search TOOL node before any agent runs — its result lands in
+# state.artifacts.search_results and feeds the research agent. The tool call
+# renders as its own step in the timeline so the "real tools" claim is visible.
+
+MCP_PAGE_NAME = "Page Summariser · MCP (demo)"
+# Two MCP Playwright nodes (navigate + snapshot) → agent summary. Shows the
+# MCP integration end-to-end without any backend code change to add browser
+# capability — it's all provisioned through the MCP client.
+
+PRD_APPROVAL_NAME = "PRD with Approval (demo)"
+# Pip drafts a PRD → human approval gate → Mara positions → Brie briefs.
+# The pause-resume flow is what makes human-in-the-loop tangible.
+
 
 async def main() -> None:
     configure_logging()
@@ -336,6 +354,99 @@ async def main() -> None:
             log.info("seed.workflow.created", name=LOOP_WORKFLOW_NAME)
         else:
             log.info("seed.workflow.exists", name=LOOP_WORKFLOW_NAME)
+
+        # ── Cited Research: TOOL node feeds agent chain ──────────────────────
+        if not any(w.name == CITED_RESEARCH_NAME for w in await wf_repo.list()):
+            graph = {
+                "version": "1.0",
+                "name": CITED_RESEARCH_NAME,
+                "description": "web_search → Remy cites the sources → Ana analyses → Brie writes the brief.",
+                "entry_node": "search",
+                "variables": {"topic": {"type": "string", "required": True}},
+                "nodes": [
+                    {"id": "search", "type": "tool", "tool": "web_search",
+                     "input_mapping": {"query": "$.variables.topic"},
+                     "output_key": "sources"},
+                    {"id": "cite", "type": "agent", "agent_id": ids["Remy the Researcher"],
+                     "input_mapping": {"sources": "$.artifacts.sources", "topic": "$.variables.topic"},
+                     "output_key": "research"},
+                    {"id": "analyse", "type": "agent", "agent_id": ids["Ana the Analyst"],
+                     "input_mapping": {"notes": "$.artifacts.research"},
+                     "output_key": "analysis"},
+                    {"id": "brief", "type": "agent", "agent_id": ids["Brie the Briefer"],
+                     "input_mapping": {"analysis": "$.artifacts.analysis"},
+                     "output_key": "brief"},
+                ],
+                "edges": [
+                    {"id": "e1", "from": "search", "to": "cite"},
+                    {"id": "e2", "from": "cite", "to": "analyse"},
+                    {"id": "e3", "from": "analyse", "to": "brief"},
+                ],
+            }
+            await wf_repo.create(name=CITED_RESEARCH_NAME, graph=graph, description=graph["description"])
+            log.info("seed.workflow.created", name=CITED_RESEARCH_NAME)
+        else:
+            log.info("seed.workflow.exists", name=CITED_RESEARCH_NAME)
+
+        # ── Page Summariser: MCP browser tools → agent ───────────────────────
+        if not any(w.name == MCP_PAGE_NAME for w in await wf_repo.list()):
+            graph = {
+                "version": "1.0",
+                "name": MCP_PAGE_NAME,
+                "description": "mcp_playwright navigates + snapshots a URL → Brie writes a one-paragraph summary.",
+                "entry_node": "open",
+                "variables": {"url": {"type": "string", "required": True}},
+                "nodes": [
+                    {"id": "open", "type": "tool", "tool": "mcp__playwright__browser_navigate",
+                     "input_mapping": {"url": "$.variables.url"},
+                     "output_key": "navigated"},
+                    {"id": "snap", "type": "tool", "tool": "mcp__playwright__browser_snapshot",
+                     "output_key": "page_snapshot"},
+                    {"id": "summarise", "type": "agent", "agent_id": ids["Brie the Briefer"],
+                     "input_mapping": {"page": "$.artifacts.page_snapshot", "url": "$.variables.url"},
+                     "output_key": "summary"},
+                ],
+                "edges": [
+                    {"id": "e1", "from": "open", "to": "snap"},
+                    {"id": "e2", "from": "snap", "to": "summarise"},
+                ],
+            }
+            await wf_repo.create(name=MCP_PAGE_NAME, graph=graph, description=graph["description"])
+            log.info("seed.workflow.created", name=MCP_PAGE_NAME)
+        else:
+            log.info("seed.workflow.exists", name=MCP_PAGE_NAME)
+
+        # ── PRD with Approval: human gate splits the run in two halves ──────
+        if not any(w.name == PRD_APPROVAL_NAME for w in await wf_repo.list()) and "Pip the PM" in ids:
+            graph = {
+                "version": "1.0",
+                "name": PRD_APPROVAL_NAME,
+                "description": "Pip drafts a PRD → you approve → Mara positions → Brie briefs.",
+                "entry_node": "prd",
+                "variables": {"idea": {"type": "string", "required": True}},
+                "nodes": [
+                    {"id": "prd", "type": "agent", "agent_id": ids["Pip the PM"],
+                     "input_mapping": {"idea": "$.variables.idea"},
+                     "output_key": "draft_prd"},
+                    {"id": "approve", "type": "human",
+                     "label": "Approve the PRD before positioning + briefing?"},
+                    {"id": "position", "type": "agent", "agent_id": ids["Mara the Marketer"],
+                     "input_mapping": {"prd": "$.artifacts.draft_prd"},
+                     "output_key": "positioning"},
+                    {"id": "brief", "type": "agent", "agent_id": ids["Brie the Briefer"],
+                     "input_mapping": {"prd": "$.artifacts.draft_prd", "positioning": "$.artifacts.positioning"},
+                     "output_key": "brief"},
+                ],
+                "edges": [
+                    {"id": "e1", "from": "prd", "to": "approve"},
+                    {"id": "e2", "from": "approve", "to": "position"},
+                    {"id": "e3", "from": "position", "to": "brief"},
+                ],
+            }
+            await wf_repo.create(name=PRD_APPROVAL_NAME, graph=graph, description=graph["description"])
+            log.info("seed.workflow.created", name=PRD_APPROVAL_NAME)
+        else:
+            log.info("seed.workflow.exists", name=PRD_APPROVAL_NAME)
 
         # Seeded team channels — Slack-style spaces with prebuilt rosters so
         # /team isn't an empty page. Idempotent on (name).
