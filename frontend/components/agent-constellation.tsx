@@ -68,11 +68,13 @@ export function AgentConstellation() {
   const idleHidden = focus ? roster.length - ring.length : 0;
 
   const W = 680, H = 380, cx = W / 2, cy = H / 2;
-  // Fewer nodes → roomier ring; many idle nodes → tighter.
-  const R = focus ? 120 : Math.min(150, 70 + ring.length * 3);
-  // Show labels + roles on every dot while there are ≤14 specialists — anonymous
-  // dots look generic; named ones communicate "you have a team of identities."
-  const big = focus || ring.length <= 14;
+  // Fewer nodes → roomier ring; many idle nodes → tighter. Big-mode (named
+  // labels on every dot) always on — anonymous dots look generic; named ones
+  // communicate "you have a standing team of identities". Roles only crowd
+  // beyond ~12, so suppress them past that point.
+  const R = focus ? 120 : Math.min(160, 76 + ring.length * 3);
+  const big = true;
+  const showRoles = focus || ring.length <= 12;
   const hubLive = (live?.activeNow.size ?? 0) > 0 || live?.coordinatorBusy;
   const COLOR = { active: "var(--color-status-running)", done: "var(--color-status-completed)", idle: "var(--color-muted-foreground)" };
 
@@ -126,7 +128,7 @@ export function AgentConstellation() {
                   fontSize={big ? 11 : 8.5} fontWeight={p.st === "active" ? 600 : 400}
                   fill={p.st === "idle" ? "var(--color-muted-foreground)" : "var(--color-foreground)"}>{p.agent.name.split(" ")[0]}</text>
               )}
-              {big && <text x={p.x} y={p.y + (r + 24)} textAnchor="middle" fontSize={8} fill="var(--color-muted-foreground)">{role}</text>}
+              {showRoles && <text x={p.x} y={p.y + (r + 24)} textAnchor="middle" fontSize={8} fill="var(--color-muted-foreground)">{role}</text>}
             </g>
           );
         })}

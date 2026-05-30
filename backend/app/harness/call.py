@@ -76,10 +76,15 @@ class ToolCall:
 class LLMResponse:
     content: str
     tool_calls: list[ToolCall] = field(default_factory=list)
-    tokens_in: int = 0
+    tokens_in: int = 0          # uncached input tokens (full price)
     tokens_out: int = 0
     finish_reason: str | None = None
     raw: dict = field(default_factory=dict)
+    # Prompt-cache usage (Anthropic ephemeral cache). cache_read = hit (10%);
+    # cache_creation = miss that *wrote* the cache (125%). Zero when caching is
+    # disabled or unsupported by the provider.
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
 
 
 # ── Attempt + harnessed call ─────────────────────────────────────────────────

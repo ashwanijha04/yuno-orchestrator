@@ -9,6 +9,9 @@ from __future__ import annotations
 from app.harness.call import ImageBlock, LLMRequest, LLMResponse, TextBlock, ToolCall
 from app.harness.providers.base import FatalError, RetryableError
 from app.config import settings
+from app.logging import get_logger
+
+_log = get_logger("harness.anthropic")
 
 
 def _to_anthropic_content(content) -> object:
@@ -63,10 +66,24 @@ class AnthropicProvider:
             "temperature": request.temperature,
             "messages": messages,
         }
+        # Prompt caching: mark the system prompt and the LAST tool with
+        # cache_control=ephemeral. Anthropic caches *up through* the last marked
+        # block, so this caches system + the entire tool list for ~5 minutes.
+        # Repeat calls within the conversation read at 10% of input cost, and
+        # time-to-first-token drops materially. The marker is a no-op on models
+        # that don't support caching.
         if request.system:
-            kwargs["system"] = request.system
+            kwargs["system"] = [
+                {
+                    "type": "text",
+                    "text": request.system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
         if request.tools:
-            kwargs["tools"] = request.tools
+            tools = [dict(t) for t in request.tools]
+            tools[-1]["cache_control"] = {"type": "ephemeral"}
+            kwargs["tools"] = tools
 
         try:
             resp = await client.messages.create(**kwargs)
@@ -85,13 +102,31 @@ class AnthropicProvider:
             elif block.type == "tool_use":
                 tool_calls.append(ToolCall(id=block.id, name=block.name, input=block.input))
 
+        # Cache usage is exposed by the SDK as optional usage fields. The
+        # `input_tokens` we already have is the *uncached* portion; the cached
+        # bytes show up separately. Treat missing attrs as zero so older SDKs
+        # and non-cached calls still work.
+        cache_read = int(getattr(resp.usage, "cache_read_input_tokens", 0) or 0)
+        cache_creation = int(getattr(resp.usage, "cache_creation_input_tokens", 0) or 0)
+        # Visible cache observability — the demo's "look, we saved 90% on the
+        # second call" line. Read at hit/(hit+input) for a quick hit-rate sense.
+        if cache_read or cache_creation:
+            _log.info(
+                "anthropic.cache",
+                model=request.model_name,
+                cache_read=cache_read,
+                cache_creation=cache_creation,
+                input_uncached=resp.usage.input_tokens,
+            )
         return LLMResponse(
             content="".join(text_parts),
             tool_calls=tool_calls,
             tokens_in=resp.usage.input_tokens,
             tokens_out=resp.usage.output_tokens,
             finish_reason=resp.stop_reason,
-            raw={"id": resp.id},
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_creation,
+            raw={"id": resp.id, "cache_read": cache_read, "cache_creation": cache_creation},
         )
 
     def estimate_tokens(self, request: LLMRequest) -> int:

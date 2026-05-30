@@ -96,7 +96,12 @@ class HarnessExecutor:
 
             call.attempts.append(attempt)
             call.response = response
-            call.cost_usd = call.cost_model.cost(response.tokens_in, response.tokens_out)
+            call.cost_usd = call.cost_model.cost(
+                response.tokens_in,
+                response.tokens_out,
+                response.cache_read_tokens,
+                response.cache_creation_tokens,
+            )
             return
 
         raise last_exc or RetryableError("exhausted attempts without a response")

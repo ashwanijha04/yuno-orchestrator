@@ -143,6 +143,17 @@ async def main() -> None:
         )
         log.info("cleanup.stale_runs_cancelled", n=result.rowcount)
 
+        # Phase 6: drop ad-hoc team channels ('test', 'marketing' with ghost
+        # UUID members) so /team shows the seeded #growth/#product/#research
+        # channels cleanly. Re-running seed re-creates the canonical set.
+        result = await session.execute(
+            text("DELETE FROM team_messages WHERE channel_id IN (SELECT id FROM team_channels WHERE name IN ('test','marketing'))")
+        )
+        await session.execute(
+            text("DELETE FROM team_channels WHERE name IN ('test','marketing')")
+        )
+        log.info("cleanup.team_channels_dropped", n=result.rowcount)
+
         await session.commit()
         log.info("cleanup.done")
 
