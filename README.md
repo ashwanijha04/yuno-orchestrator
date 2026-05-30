@@ -6,9 +6,9 @@ of staff and his staff, reach them through **Telegram**, and even have them spaw
 **real Claude Code sessions on your machine**. Everything runs locally with a single
 command.
 
-> Built for the Yuno AI Engineer challenge. Architecture rationale + the
-> build plan + the "Understanding & Approach" submission doc are shipped as
-> PDFs in [`submission/`](submission/).
+> Built for the Yuno AI Engineer challenge. Architecture rationale, the
+> build plan, and the "Understanding & Approach" write-up are delivered as
+> PDFs in the submission form alongside this repo URL.
 
 ---
 
@@ -75,8 +75,6 @@ After `make seed`:
 - Browse to the UI — Cockpit should show 17 agents on the constellation
 - `docker compose exec backend pytest -q` → `84 passed, 1 skipped`
 
-Detailed setup, troubleshooting, and the 2:45 demo script:
-👉 **[`submission/local-setup.pdf`](submission/local-setup.pdf)**
 
 ---
 
