@@ -1,4 +1,4 @@
-# Yuno — AI Agent Orchestration Platform
+# AI Agent Orchestration Platform
 
 Create AI agents (personality, tools, memory, limits), wire them into collaborative
 multi-agent workflows on a **real runtime**, **talk to a team of them** like a chief
