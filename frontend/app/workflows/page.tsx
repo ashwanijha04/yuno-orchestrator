@@ -162,6 +162,19 @@ export default function WorkflowsPage() {
         </section>
       )}
 
+      {/* Friendly nudge when only templates exist — keeps the page from feeling
+          like a dead end and points at the two natural next steps. */}
+      {workflows !== null && mine.length === 0 && templates.length > 0 && (
+        <section>
+          <p className="mb-2 text-[11px] uppercase tracking-wider text-[var(--color-muted-foreground)]">Start here</p>
+          <div className="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-card)]/40 p-5 text-sm text-[var(--color-muted-foreground)]">
+            Run a template above to see it execute, duplicate one to remix it, or{" "}
+            <Link href="/workflows/new" className="text-[var(--color-primary)] hover:underline">build a new workflow from scratch</Link>{" "}
+            with the visual builder.
+          </div>
+        </section>
+      )}
+
       {runTarget && <RunModal wf={runTarget} onClose={() => setRunTarget(null)} onLaunched={(id) => router.push(`/runs/${id}`)} />}
     </div>
   );
